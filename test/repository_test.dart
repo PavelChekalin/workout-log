@@ -107,6 +107,39 @@ void main() {
     expect(fmtSet(const SetEntry(null, 12)), '\u00d712');
   });
 
+  test('дни недели: именительный и винительный («на ...») падежи', () {
+    const nominative = [
+      'понедельник', 'вторник', 'среда', 'четверг',
+      'пятница', 'суббота', 'воскресенье',
+    ];
+    const accusative = [
+      'понедельник', 'вторник', 'среду', 'четверг',
+      'пятницу', 'субботу', 'воскресенье',
+    ];
+    for (var day = 1; day <= 7; day++) {
+      expect(weekdayNameRu(day), nominative[day - 1],
+          reason: 'именительный, день $day');
+      expect(weekdayNameRuAcc(day), accusative[day - 1],
+          reason: 'винительный «на ...», день $day');
+    }
+  });
+
+  test('recordedDates: отмечаются дни с подходами и заметками', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final ex = repo.addExercise('Жим', {1});
+    final p = repo.addPerson('Паша');
+    final d1 = DateTime(2026, 10, 5);
+    final d2 = DateTime(2026, 10, 7);
+    repo.sessionForOrNew(d1, ex.id, p.id).sets.add(const SetEntry(50, 10));
+    repo.setNote(d2, 'пропуск');
+    final marks = repo.recordedDates();
+    expect(marks.contains(isoDate(d1)), isTrue, reason: 'день с подходами');
+    expect(marks.contains(isoDate(d2)), isTrue, reason: 'день с заметкой');
+    expect(marks.contains(isoDate(DateTime(2026, 10, 6))), isFalse,
+        reason: 'пустой день не отмечен');
+  });
+
   test('сохранение и загрузка JSON', () async {
     final repo = Repository.instance;
     await repo.init();

@@ -140,7 +140,16 @@ String formatDateRu(DateTime d) =>
 String formatDateShortRu(DateTime d) =>
     '${weekdaysShort[d.weekday - 1]}, ${d.day} ${_monthsGenitive[d.month - 1]}';
 
+/// Название дня недели в именительном падеже: "сегодня пятница".
 String weekdayNameRu(int isoDay) => _weekdaysFull[isoDay - 1];
+
+// Винительный падеж — для конструкции "на ..." ("упражнения на пятницу").
+const List<String> _weekdaysAcc = [
+  'понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье',
+];
+
+/// Название дня недели в винительном падеже: "на пятницу".
+String weekdayNameRuAcc(int isoDay) => _weekdaysAcc[isoDay - 1];
 
 /// Начало недели (понедельник) для даты.
 DateTime weekStart(DateTime d) =>
@@ -315,6 +324,30 @@ class Repository {
   /// Суммарный объём (тоннаж) подходов: сумма вес × повторы.
   double volume(List<SetEntry> sets) =>
       sets.fold(0.0, (sum, e) => sum + (e.weight ?? 0) * e.reps);
+
+  /// Итог дня для человека: (число подходов, тоннаж в кг).
+  (int, double) dayStats(DateTime date, String personId) {
+    final d = isoDate(date);
+    var setCount = 0;
+    var vol = 0.0;
+    for (final s in sessions) {
+      if (s.date == d && s.personId == personId) {
+        setCount += s.sets.length;
+        vol += volume(s.sets);
+      }
+    }
+    return (setCount, vol);
+  }
+
+  /// Даты, где есть хоть один подход или заметка (для календаря).
+  Set<String> recordedDates() {
+    final s = <String>{};
+    for (final sess in sessions) {
+      if (sess.sets.isNotEmpty) s.add(sess.date);
+    }
+    s.addAll(notes.keys);
+    return s;
+  }
 
   /// Подходы самой свежей прошлой тренировки по упражнению (строго раньше даты).
   List<SetEntry>? previousSessionSets(

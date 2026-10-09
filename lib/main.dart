@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'catalog.dart';
+import 'calendar_picker.dart';
 import 'data.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -61,11 +62,6 @@ class _MainScreenState extends State<MainScreen> {
         title: const Text('Журнал тренировок'),
         actions: [
           IconButton(
-            tooltip: 'Добавить участника',
-            icon: const Icon(Icons.person_add_alt),
-            onPressed: _addPerson,
-          ),
-          IconButton(
             tooltip: 'Статистика',
             icon: const Icon(Icons.insights),
             onPressed: () async {
@@ -93,17 +89,18 @@ class _MainScreenState extends State<MainScreen> {
       body: Column(
         children: [
           _dateBar(),
-          _participantsBar(),
           _daySummary(),
           const Divider(height: 1),
           Expanded(
-            child: dayExercises.isEmpty
-                ? _emptyExercises()
-                : ListView.builder(
-                    padding: const EdgeInsets.only(top: 8, bottom: 96),
-                    itemCount: dayExercises.length,
-                    itemBuilder: (_, i) => _exerciseCard(dayExercises[i]),
-                  ),
+            child: repo.people.isEmpty
+                ? _noParticipants()
+                : dayExercises.isEmpty
+                    ? _emptyExercises()
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(top: 8, bottom: 96),
+                        itemCount: dayExercises.length,
+                        itemBuilder: (_, i) => _exerciseCard(dayExercises[i]),
+                      ),
           ),
         ],
       ),
@@ -116,10 +113,9 @@ class _MainScreenState extends State<MainScreen> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Предыдущий день',
-            onPressed: () => setState(
-                () => selectedDate = selectedDate.subtract(const Duration(days: 1))),
+            tooltip: 'Календарь',
+            icon: const Icon(Icons.calendar_month),
+            onPressed: _openCalendar,
           ),
           Expanded(
             child: Column(
@@ -130,7 +126,7 @@ class _MainScreenState extends State<MainScreen> {
                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
                 Text(
-                  'упражнения на ${weekdayNameRu(selectedDate.weekday)}',
+                  'упражнения на ${weekdayNameRuAcc(selectedDate.weekday)}',
                   style: TextStyle(fontSize: 12, color: _cs.onSurfaceVariant),
                 ),
               ],
@@ -139,8 +135,15 @@ class _MainScreenState extends State<MainScreen> {
           IconButton(
             icon: const Icon(Icons.chevron_right),
             tooltip: 'Следующий день',
-            onPressed: () => setState(
-                () => selectedDate = selectedDate.add(const Duration(days: 1))),
+            onPressed: () {
+              final next = DateTime(selectedDate.year, selectedDate.month,
+                  selectedDate.day + 1);
+              final today = DateTime.now();
+              final todayOnly = DateTime(today.year, today.month, today.day);
+              if (!next.isAfter(todayOnly)) {
+                setState(() => selectedDate = next);
+              }
+            },
           ),
           TextButton(
             onPressed: () => setState(() => selectedDate = DateTime.now()),
@@ -151,17 +154,20 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Открыть календарь и перейти к выбранному дню.
+  Future<void> _openCalendar() async {
+    final picked = await showDayCalendar(
+      context,
+      marked: repo.recordedDates(),
+      initial: selectedDate,
+    );
+    if (picked != null) {
+      setState(() => selectedDate = picked);
+    }
+  }
+
   /// Итог дня (подходы + тоннаж) и заметка к тренировке.
   Widget _daySummary() {
-    final d = isoDate(selectedDate);
-    var setCount = 0;
-    var vol = 0.0;
-    for (final s in repo.sessions) {
-      if (s.date == d) {
-        setCount += s.sets.length;
-        vol += repo.volume(s.sets);
-      }
-    }
     final note = repo.noteFor(selectedDate);
 
     return Padding(
@@ -174,13 +180,8 @@ class _MainScreenState extends State<MainScreen> {
               Icon(Icons.summarize_outlined,
                   size: 16, color: _cs.onSurfaceVariant),
               const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  setCount == 0
-                      ? 'Итог дня: пока пусто'
-                      : 'Итог дня: $setCount подх. · ${grouped(vol)} кг',
-                  style: TextStyle(color: _cs.onSurfaceVariant, fontSize: 13),
-                ),
+              const Expanded(
+                child: Text('Итог дня', style: TextStyle(fontSize: 13)),
               ),
               TextButton.icon(
                 onPressed: _editNote,
@@ -189,6 +190,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
           ),
+          for (final p in repo.people) _personDayRow(p),
           if (note != null)
             Padding(
               padding: const EdgeInsets.only(left: 22, right: 8, bottom: 2),
@@ -201,6 +203,37 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Итог дня одного участника: подходы · тоннаж.
+  Widget _personDayRow(Person person) {
+    final (setCount, vol) = repo.dayStats(selectedDate, person.id);
+    final color = personColor(person.id);
+    return Padding(
+      padding: const EdgeInsets.only(left: 22, bottom: 2),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 9,
+            backgroundColor: color.withValues(alpha: 0.25),
+            child: Text(
+              personInitial(person.name),
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.bold, fontSize: 8),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              setCount == 0
+                  ? '${person.name}: —'
+                  : '${person.name}: $setCount подх. · ${grouped(vol)} кг',
+              style: TextStyle(color: _cs.onSurfaceVariant, fontSize: 13),
+            ),
+          ),
         ],
       ),
     );
@@ -239,40 +272,32 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {});
   }
 
-  /// Строка участников: чипы людей + кнопка «Участник».
-  Widget _participantsBar() {
-    return SizedBox(
-      height: 56,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        children: [
-          for (final p in repo.people)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: InputChip(
-                avatar: CircleAvatar(
-                  backgroundColor: personColor(p.id).withValues(alpha: 0.25),
-                  child: Text(
-                    personInitial(p.name),
-                    style: TextStyle(
-                      color: personColor(p.id),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                label: Text(p.name),
-                onPressed: () => _renamePerson(p),
-                onDeleted: () => _confirmDeletePerson(p),
-              ),
+  Widget _noParticipants() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.people_outline, size: 56, color: _cs.onSurfaceVariant),
+            const SizedBox(height: 12),
+            const Text('Пока нет участников',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(
+              'Добавьте тех, кто тренируется, '
+              'чтобы на экране появились строки для ввода подходов.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _cs.onSurfaceVariant, fontSize: 13),
             ),
-          ActionChip(
-            avatar: const Icon(Icons.add, size: 18),
-            label: const Text('Участник'),
-            onPressed: _addPerson,
-          ),
-        ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _addPerson,
+              icon: const Icon(Icons.person_add),
+              label: const Text('Добавить участника'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -287,7 +312,7 @@ class _MainScreenState extends State<MainScreen> {
             Icon(Icons.fitness_center, size: 56, color: _cs.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
-              'На ${weekdayNameRu(selectedDate.weekday)} упражнений нет',
+              'На ${weekdayNameRuAcc(selectedDate.weekday)} упражнений нет',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
@@ -362,17 +387,7 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ],
             ),
-            if (repo.people.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Добавьте участников (кнопка «+ Участник» выше), '
-                  'чтобы записывать подходы.',
-                  style: TextStyle(color: _cs.onSurfaceVariant, fontSize: 13),
-                ),
-              )
-            else
-              ...repo.people.map((p) => _personRow(exercise, p)),
+            ...repo.people.map((p) => _personRow(exercise, p)),
           ],
         ),
       ),
@@ -464,35 +479,6 @@ class _MainScreenState extends State<MainScreen> {
     if (name == null || name.isEmpty) return;
     repo.addPerson(name);
     setState(() {});
-  }
-
-  Future<void> _renamePerson(Person person) async {
-    final name = await _askName('Имя участника', person.name);
-    if (name == null || name.isEmpty) return;
-    repo.renamePerson(person, name);
-    setState(() {});
-  }
-
-  void _confirmDeletePerson(Person person) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Удалить ${person.name}?'),
-        content: const Text('Все записи этого участника тоже будут удалены.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () {
-              repo.deletePerson(person);
-              Navigator.pop(context);
-              setState(() {});
-            },
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _openSets(Exercise exercise, Person person) async {
