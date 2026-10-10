@@ -253,7 +253,7 @@ class _MainScreenState extends State<MainScreen> {
           maxLines: 5,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
-            hintText: 'Например: у Паши травма кисти, подтягивания не делал',
+            hintText: 'Например: много повторений, вес уменьшил',
             border: OutlineInputBorder(),
           ),
         ),
