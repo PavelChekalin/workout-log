@@ -165,10 +165,20 @@ class Repository {
 
   static const String _prefsKey = 'workout_log_v1';
   static const String _themeKey = 'workout_theme';
+  static const String _restEnabledKey = 'workout_rest_enabled';
+  static const String _restSecondsKey = 'workout_rest_seconds';
 
   /// 'system' | 'light' | 'dark'
   String _themeName = 'dark';
   String get themeName => _themeName;
+
+  /// Показывать ли таймер отдыха между подходами.
+  bool _restTimerEnabled = true;
+  bool get restTimerEnabled => _restTimerEnabled;
+
+  /// Сколько отдыхать, секунд (по умолчанию 2 минуты).
+  int _restSeconds = 120;
+  int get restSeconds => _restSeconds;
 
   final List<Person> people = [];
   final List<Exercise> exercises = [];
@@ -188,12 +198,26 @@ class Repository {
       }
     }
     _themeName = prefs.getString(_themeKey) ?? 'dark';
+    _restTimerEnabled = prefs.getBool(_restEnabledKey) ?? true;
+    _restSeconds = prefs.getInt(_restSecondsKey) ?? 120;
   }
 
   Future<void> setThemeName(String value) async {
     _themeName = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeKey, value);
+  }
+
+  Future<void> setRestTimerEnabled(bool value) async {
+    _restTimerEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_restEnabledKey, value);
+  }
+
+  Future<void> setRestSeconds(int seconds) async {
+    _restSeconds = seconds;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_restSecondsKey, seconds);
   }
 
   Future<void> save() async {

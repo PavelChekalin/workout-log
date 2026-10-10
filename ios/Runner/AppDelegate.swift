@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import AudioToolbox
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -12,5 +13,24 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    // Таймер отдыха: экран не гаснет, пока идёт отсчёт, и вибрация по концу.
+    let messenger = engineBridge.applicationRegistrar.messenger()
+    let channel = FlutterMethodChannel(name: "workout/timer", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "keepScreenOn":
+        let args = call.arguments as? [String: Any]
+        let on = args?["on"] as? Bool ?? false
+        UIScreen.main.isIdleTimerDisabled = on
+        result(nil)
+      case "notifyEnd":
+        AudioServicesPlaySystemSound(1104)
+        AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }

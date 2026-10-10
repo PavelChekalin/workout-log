@@ -18,6 +18,19 @@ void main() {
     expect(Repository.instance.people, isEmpty);
   });
 
+  test('таймер отдыха: по умолчанию включён, настройки сохраняются', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    expect(repo.restTimerEnabled, isTrue);
+    expect(repo.restSeconds, 120);
+
+    await repo.setRestTimerEnabled(false);
+    await repo.setRestSeconds(180);
+    await repo.init(); // перечитываем из хранилища
+    expect(repo.restTimerEnabled, isFalse);
+    expect(repo.restSeconds, 180);
+  });
+
   test('подходы сохраняются, вес предзаполняется, есть подсказка «неделю назад»',
       () async {
     final repo = Repository.instance;

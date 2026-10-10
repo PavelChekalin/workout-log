@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'catalog.dart';
 import 'calendar_picker.dart';
@@ -46,7 +49,70 @@ class _MainScreenState extends State<MainScreen> {
   final repo = Repository.instance;
   DateTime selectedDate = DateTime.now();
 
-  void _refresh() => setState(() {});
+  /// Отсчёт отдыха: конец в DateTime, пока тикает — показываем плашку.
+  DateTime? _restEndsAt;
+  Timer? _restTicker;
+
+  void _refresh() {
+    if (!repo.restTimerEnabled && _restEndsAt != null) _stopRest();
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _restTicker?.cancel();
+    TimerSignals.keepScreenOn(false);
+    super.dispose();
+  }
+
+  /// Сколько секунд отдыха осталось (0 — время вышло).
+  int get _restLeft {
+    final end = _restEndsAt;
+    if (end == null) return 0;
+    final left = end.difference(DateTime.now()).inSeconds;
+    return left < 0 ? 0 : left;
+  }
+
+  /// Начать (и перезапустить) отдых после записанного подхода.
+  void _startRest() {
+    if (!repo.restTimerEnabled) return;
+    _restEndsAt = DateTime.now().add(Duration(seconds: repo.restSeconds));
+    _restTicker?.cancel();
+    _restTicker = Timer.periodic(const Duration(seconds: 1), (_) => _onRestTick());
+    TimerSignals.keepScreenOn(true);
+    if (mounted) setState(() {});
+  }
+
+  void _onRestTick() {
+    if (_restEndsAt == null) return;
+    if (_restLeft <= 0) {
+      _restTicker?.cancel();
+      _restTicker = null;
+      _restEndsAt = null;
+      TimerSignals.keepScreenOn(false);
+      TimerSignals.notifyEnd();
+      if (mounted) setState(() {});
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Стоп: просто убрать отсчёт без оповещения.
+  void _stopRest() {
+    _restTicker?.cancel();
+    _restTicker = null;
+    _restEndsAt = null;
+    TimerSignals.keepScreenOn(false);
+    if (mounted) setState(() {});
+  }
+
+  /// «+30 сек» — продлить отдых.
+  void _restPlus(int seconds) {
+    final end = _restEndsAt;
+    if (end == null) return;
+    _restEndsAt = end.add(Duration(seconds: seconds));
+    if (mounted) setState(() {});
+  }
 
   ColorScheme get _cs => Theme.of(context).colorScheme;
 
@@ -86,23 +152,76 @@ class _MainScreenState extends State<MainScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Упражнение'),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _dateBar(),
-          _daySummary(),
-          const Divider(height: 1),
-          Expanded(
-            child: repo.people.isEmpty
-                ? _noParticipants()
-                : dayExercises.isEmpty
-                    ? _emptyExercises()
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(top: 8, bottom: 96),
-                        itemCount: dayExercises.length,
-                        itemBuilder: (_, i) => _exerciseCard(dayExercises[i]),
-                      ),
+          Column(
+            children: [
+              _dateBar(),
+              _daySummary(),
+              const Divider(height: 1),
+              Expanded(
+                child: repo.people.isEmpty
+                    ? _noParticipants()
+                    : dayExercises.isEmpty
+                        ? _emptyExercises()
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(top: 8, bottom: 96),
+                            itemCount: dayExercises.length,
+                            itemBuilder: (_, i) =>
+                                _exerciseCard(dayExercises[i]),
+                          ),
+              ),
+            ],
           ),
+          if (_restEndsAt != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 84,
+              child: _restBar(),
+            ),
         ],
+      ),
+    );
+  }
+
+  /// Плашка обратного отсчёта: висит поверх списка, не мешая записи подходов.
+  Widget _restBar() {
+    final left = _restLeft;
+    final m = left ~/ 60;
+    final s = left % 60;
+    return Material(
+      color: _cs.primaryContainer,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+        child: Row(
+          children: [
+            Icon(Icons.timer_outlined, color: _cs.onPrimaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Отдых $m:${s.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: _cs.onPrimaryContainer,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _restPlus(30),
+              child: const Text('+30 сек'),
+            ),
+            IconButton(
+              tooltip: 'Стоп',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.close, color: _cs.onPrimaryContainer),
+              onPressed: _stopRest,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -488,6 +607,7 @@ class _MainScreenState extends State<MainScreen> {
         exercise: exercise,
         person: person,
         date: selectedDate,
+        onSetAdded: _startRest,
       ),
     );
     setState(() {});
@@ -601,10 +721,14 @@ class _SetsDialog extends StatefulWidget {
   final Person person;
   final DateTime date;
 
+  /// Вызывается, когда подход записан (запускает таймер отдыха).
+  final VoidCallback? onSetAdded;
+
   const _SetsDialog({
     required this.exercise,
     required this.person,
     required this.date,
+    this.onSetAdded,
   });
 
   @override
@@ -647,6 +771,7 @@ class _SetsDialogState extends State<_SetsDialog> {
     session.sets.add(SetEntry(weight, reps));
     Repository.instance.save();
     _reps.clear();
+    widget.onSetAdded?.call();
     setState(() {});
   }
 
@@ -1044,5 +1169,24 @@ class _TechPickerState extends State<_TechPicker> {
             onPressed: () => Navigator.pop(context), child: const Text('Закрыть')),
       ],
     );
+  }
+}
+
+/// Сигналы «телефону» во время отдыха: экран не гаснет, пока идёт отсчёт,
+/// и оповещение (вибрация + звук) по концу. Если платформа этого не умеет —
+/// тихо ничего не делаем, таймер всё равно отсчитывает.
+class TimerSignals {
+  static const MethodChannel _ch = MethodChannel('workout/timer');
+
+  static Future<void> keepScreenOn(bool on) async {
+    try {
+      await _ch.invokeMethod('keepScreenOn', {'on': on});
+    } catch (_) {}
+  }
+
+  static Future<void> notifyEnd() async {
+    try {
+      await _ch.invokeMethod('notifyEnd');
+    } catch (_) {}
   }
 }

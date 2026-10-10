@@ -52,6 +52,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+          const _SectionTitle('Отдых между подходами'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Использовать таймер отдыха'),
+                  subtitle: const Text(
+                      'После записанного подхода на экране идёт обратный '
+                      'отсчёт, по концу — вибрация и звук. Кому отдыхать по '
+                      'часам не нужно — выключите здесь.'),
+                  value: repo.restTimerEnabled,
+                  onChanged: (v) {
+                    repo.setRestTimerEnabled(v);
+                    setState(() {});
+                  },
+                ),
+                if (repo.restTimerEnabled) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
+                    child: Row(
+                      children: [
+                        const Expanded(child: Text('Сколько отдыхать')),
+                        Wrap(
+                          spacing: 6,
+                          children: [
+                            for (final (sec, label) in const [
+                              (60, '1 мин'),
+                              (120, '2 мин'),
+                              (180, '3 мин'),
+                              (300, '5 мин'),
+                            ])
+                              ChoiceChip(
+                                label: Text(label),
+                                selected: repo.restSeconds == sec,
+                                onSelected: (_) {
+                                  repo.setRestSeconds(sec);
+                                  setState(() {});
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
           const _SectionTitle('Участники'),
           ...repo.people.map(_personTile),
           const SizedBox(height: 4),
