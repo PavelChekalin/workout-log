@@ -22,7 +22,9 @@ import AudioToolbox
       case "keepScreenOn":
         let args = call.arguments as? [String: Any]
         let on = args?["on"] as? Bool ?? false
-        UIScreen.main.isIdleTimerDisabled = on
+        DispatchQueue.main.async {
+          UIApplication.shared.isIdleTimerDisabled = on
+        }
         result(nil)
       case "notifyEnd":
         AudioServicesPlaySystemSound(1104)

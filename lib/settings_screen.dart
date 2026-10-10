@@ -74,10 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (repo.restTimerEnabled) ...[
                   const Divider(height: 1),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
-                    child: Row(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Expanded(child: Text('Сколько отдыхать')),
+                        const Text('Сколько отдыхать'),
+                        const SizedBox(height: 8),
                         Wrap(
                           spacing: 6,
                           children: [
