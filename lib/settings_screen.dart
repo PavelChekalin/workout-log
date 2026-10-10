@@ -106,6 +106,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const _SectionTitle('Видео'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Куда сохранять видео'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Галерея'),
+                        selected: repo.videoStorage == 'gallery',
+                        onSelected: (_) {
+                          repo.setVideoStorage('gallery');
+                          setState(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Память приложения'),
+                        selected: repo.videoStorage == 'app',
+                        onSelected: (_) {
+                          repo.setVideoStorage('app');
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    repo.videoStorage == 'gallery'
+                        ? 'Видео ляжет в папку «Видео/WorkoutLog» и будет видно в '
+                            'Галереи телефона.'
+                        : 'Видео будет храниться только внутри приложения. '
+                            'ВНИМАНИЕ: при удалении приложения эти видео '
+                            'удалятся вместе с ним — восстановить их нельзя. '
+                            'Если видео нужны на телефоне — выберите «Галерея».',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: repo.videoStorage == 'app'
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'SD-карта не поддерживается: Android 11+ запрещает '
+                    'приложениям писать на вторую карту памяти.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           const _SectionTitle('Участники'),
           ...repo.people.map(_personTile),
           const SizedBox(height: 4),

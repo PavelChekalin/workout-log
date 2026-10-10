@@ -96,6 +96,36 @@ class Session {
       };
 }
 
+/// Записанное видео: привязано к дате и упражнению. В записи хранится
+/// ТОЛЬКО ссылка на файл (путь или content://), само видео — нет.
+class VideoNote {
+  final String date; // 'yyyy-MM-dd'
+  final String exerciseId;
+  final String path;
+  final int createdAt; // мс с эпохи — для порядка в списке
+
+  VideoNote({
+    required this.date,
+    required this.exerciseId,
+    required this.path,
+    required this.createdAt,
+  });
+
+  factory VideoNote.fromJson(Map<String, dynamic> j) => VideoNote(
+        date: j['date'] as String,
+        exerciseId: j['ex'] as String,
+        path: j['path'] as String,
+        createdAt: (j['created'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'ex': exerciseId,
+        'path': path,
+        'created': createdAt,
+      };
+}
+
 // ---------------------------------------------------------------------------
 // Формат чисел и дат
 // ---------------------------------------------------------------------------
@@ -167,6 +197,7 @@ class Repository {
   static const String _themeKey = 'workout_theme';
   static const String _restEnabledKey = 'workout_rest_enabled';
   static const String _restSecondsKey = 'workout_rest_seconds';
+  static const String _videoStorageKey = 'workout_video_storage';
 
   /// 'system' | 'light' | 'dark'
   String _themeName = 'dark';
@@ -180,9 +211,16 @@ class Repository {
   int _restSeconds = 120;
   int get restSeconds => _restSeconds;
 
+  /// Куда сохранять видео: 'gallery' (Галерея) | 'app' (память приложения).
+  String _videoStorage = 'gallery';
+  String get videoStorage => _videoStorage;
+
   final List<Person> people = [];
   final List<Exercise> exercises = [];
   final List<Session> sessions = [];
+
+  /// Записанные видео: только ссылки на файлы.
+  final List<VideoNote> videos = [];
 
   /// Заметки к тренировке по датам ('yyyy-MM-dd').
   final Map<String, String> notes = {};
@@ -200,6 +238,7 @@ class Repository {
     _themeName = prefs.getString(_themeKey) ?? 'dark';
     _restTimerEnabled = prefs.getBool(_restEnabledKey) ?? true;
     _restSeconds = prefs.getInt(_restSecondsKey) ?? 120;
+    _videoStorage = prefs.getString(_videoStorageKey) ?? 'gallery';
   }
 
   Future<void> setThemeName(String value) async {
@@ -218,6 +257,12 @@ class Repository {
     _restSeconds = seconds;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_restSecondsKey, seconds);
+  }
+
+  Future<void> setVideoStorage(String value) async {
+    _videoStorage = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_videoStorageKey, value);
   }
 
   Future<void> save() async {
@@ -363,13 +408,16 @@ class Repository {
     return (setCount, vol);
   }
 
-  /// Даты, где есть хоть один подход или заметка (для календаря).
+  /// Даты, где есть хоть один подход, заметка или видео (для календаря).
   Set<String> recordedDates() {
     final s = <String>{};
     for (final sess in sessions) {
       if (sess.sets.isNotEmpty) s.add(sess.date);
     }
     s.addAll(notes.keys);
+    for (final v in videos) {
+      s.add(v.date);
+    }
     return s;
   }
 
@@ -408,6 +456,36 @@ class Repository {
     save();
   }
 
+  // ---------- Видео ----------
+
+  /// Видео упражнения за конкретную дату (свежие сверху).
+  List<VideoNote> videosFor(DateTime date, String exerciseId) {
+    final d = isoDate(date);
+    final list = videos
+        .where((v) => v.date == d && v.exerciseId == exerciseId)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  VideoNote addVideo(DateTime date, String exerciseId, String path) {
+    final v = VideoNote(
+      date: isoDate(date),
+      exerciseId: exerciseId,
+      path: path,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    videos.add(v);
+    save();
+    return v;
+  }
+
+  /// Убрать запись о видео (сам файл может удалить приложение).
+  void removeVideo(VideoNote v) {
+    videos.remove(v);
+    save();
+  }
+
   // ---------- Экспорт / импорт ----------
 
   String exportJson() => const JsonEncoder.withIndent('  ').convert(_toJson());
@@ -430,6 +508,7 @@ class Repository {
         'exercises': exercises.map((e) => e.toJson()).toList(),
         'sessions': sessions.map((e) => e.toJson()).toList(),
         'notes': notes,
+        'videos': videos.map((e) => e.toJson()).toList(),
       };
 
   void _loadFrom(String raw) {
@@ -438,6 +517,7 @@ class Repository {
     exercises.clear();
     sessions.clear();
     notes.clear();
+    videos.clear();
     for (final p in (root['people'] as List? ?? const [])) {
       people.add(Person.fromJson((p as Map).cast<String, dynamic>()));
     }
@@ -446,6 +526,9 @@ class Repository {
     }
     for (final s in (root['sessions'] as List? ?? const [])) {
       sessions.add(Session.fromJson((s as Map).cast<String, dynamic>()));
+    }
+    for (final v in (root['videos'] as List? ?? const [])) {
+      videos.add(VideoNote.fromJson((v as Map).cast<String, dynamic>()));
     }
     final n = root['notes'];
     if (n is Map) {

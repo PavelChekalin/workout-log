@@ -1,17 +1,43 @@
 package ru.pchekalin.workoutlog
 
+import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ContentValues
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.MediaScannerConnection
 import android.media.ToneGenerator
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.MediaStore
 import android.view.WindowManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
+    private val rcVideo = 7711
+    private val rcStorage = 7712
+    private val rcPick = 7713
+
+    // Состояние одной записи видео — живёт, пока открыта камера.
+    private var videoResult: MethodChannel.Result? = null
+    private var videoPendingToGallery = false
+    private var videoPendingFile: File? = null
+    private var videoPendingUri: Uri? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -37,7 +63,300 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "workout/video")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "record" -> startRecordVideo(
+                        call.argument<Boolean>("toGallery") ?: true, result
+                    )
+                    "pick" -> pickVideo(result)
+                    "open" -> openVideo(call.argument<String>("path") ?: "", result)
+                    "share" -> shareVideo(call.argument<String>("path") ?: "", result)
+                    "delete" -> deleteVideo(call.argument<String>("path") ?: "", result)
+                    else -> result.notImplemented()
+                }
+            }
     }
+
+    // -----------------------------------------------------------------------
+    // Видео
+    // -----------------------------------------------------------------------
+
+    /**
+     * Открыть штатную камеру. Камера пишет в наш файл (EXTRA_OUTPUT) —
+     * так сразу известен путь, ничего сканировать не надо.
+     */
+    private fun startRecordVideo(toGallery: Boolean, result: MethodChannel.Result) {
+        if (videoResult != null) {
+            result.error("busy", "Камера уже открыта", null)
+            return
+        }
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+        if (intent.resolveActivity(packageManager) == null) {
+            result.error("no_camera", "На этом телефоне нет камеры", null)
+            return
+        }
+        videoResult = result
+        videoPendingToGallery = toGallery
+        videoPendingFile = null
+        videoPendingUri = null
+        try {
+            if (toGallery) {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    // Android 10+: пишем через MediaStore, разрешения не нужны.
+                    val values = ContentValues().apply {
+                        put(
+                            MediaStore.Video.Media.DISPLAY_NAME,
+                            "WL_${System.currentTimeMillis()}.mp4"
+                        )
+                        put(
+                            MediaStore.Video.Media.RELATIVE_PATH,
+                            Environment.DIRECTORY_MOVIES + "/WorkoutLog"
+                        )
+                        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                        put(MediaStore.Video.Media.IS_PENDING, 1)
+                    }
+                    val uri = contentResolver.insert(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values
+                    )
+                    if (uri == null) {
+                        videoResult = null
+                        result.error("storage", "Не удалось создать файл в Галерее", null)
+                        return
+                    }
+                    videoPendingUri = uri
+                    intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                    intent.addFlags(
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } else {
+                    // Android 8-9: в общую Галерею — только с разрешением.
+                    if (ContextCompat.checkSelfPermission(
+                            this, Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                            rcStorage
+                        )
+                        return // продолжим в onRequestPermissionsResult
+                    }
+                    prepareLegacyGallery(intent)
+                }
+            } else {
+                // Память приложения: своя папка, разрешений не просим.
+                val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+                File(dir, "WorkoutLog").mkdirs()
+                val f = File(dir, "WorkoutLog/WL_${System.currentTimeMillis()}.mp4")
+                videoPendingFile = f
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, contentUriFor(f))
+                intent.addFlags(
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            startActivityForResult(intent, rcVideo)
+        } catch (e: ActivityNotFoundException) {
+            videoResult = null
+            cleanupPending()
+            result.error("no_camera", "На этом телефоне нет камеры", null)
+        } catch (e: Exception) {
+            videoResult = null
+            cleanupPending()
+            result.error("camera", e.message, null)
+        }
+    }
+
+    /**
+     * Выбрать уже записанное видео из памяти телефона. Берём URI с долгим
+     * разрешением на чтение — чтобы открыть/показать файл можно было и
+     * после перезагрузки. Сам файл не трогаем.
+     */
+    private fun pickVideo(result: MethodChannel.Result) {
+        if (videoResult != null) {
+            result.error("busy", "Окно уже открыто", null)
+            return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "video/*"
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
+        videoResult = result
+        try {
+            startActivityForResult(intent, rcPick)
+        } catch (e: ActivityNotFoundException) {
+            videoResult = null
+            result.error("pick", "Не получилось открыть выбор файлов", null)
+        }
+    }
+
+    /** Android 8-9, Галерея: готовим файл в публичной папке Movies/WorkoutLog. */
+    private fun prepareLegacyGallery(intent: Intent) {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        val dir = File(base, "WorkoutLog")
+        dir.mkdirs()
+        val f = File(dir, "WL_${System.currentTimeMillis()}.mp4")
+        videoPendingFile = f
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, contentUriFor(f))
+        intent.addFlags(
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == rcPick) {
+            val res = videoResult ?: return
+            videoResult = null
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                res.success(null)
+                return
+            }
+            try {
+                // Просим долгое разрешение читать этот файл (на случай
+                // перезагрузки телефона — ссылка должна остаться рабочей).
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+                // Некоторые провайдеры не дают долгого разрешения —
+                // файл всё равно откроется, пока телефон не перезагрузят.
+            }
+            res.success(uri.toString())
+            return
+        }
+        if (requestCode != rcVideo) return
+        val res = videoResult ?: return
+        videoResult = null
+        if (resultCode != Activity.RESULT_OK) {
+            cleanupPending()
+            res.success(null)
+            return
+        }
+        try {
+            val uri = videoPendingUri
+            val file = videoPendingFile
+            val out: String? = when {
+                uri != null -> {
+                    // Снимаем флаг «в процессе» — видео появится в Галерее.
+                    contentResolver.update(
+                        uri,
+                        ContentValues().apply {
+                            put(MediaStore.Video.Media.IS_PENDING, 0)
+                        },
+                        null, null
+                    )
+                    uri.toString()
+                }
+                file != null -> {
+                    if (videoPendingToGallery) {
+                        // Android 8-9: показать файл в Галерее сразу.
+                        MediaScannerConnection.scanFile(
+                            this, arrayOf(file.absolutePath), arrayOf("video/mp4"), null
+                        )
+                    }
+                    file.absolutePath
+                }
+                else -> null
+            }
+            videoPendingUri = null
+            videoPendingFile = null
+            res.success(out)
+        } catch (e: Exception) {
+            res.error("save", e.message, null)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != rcStorage) return
+        val res = videoResult ?: return
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+                prepareLegacyGallery(intent)
+                startActivityForResult(intent, rcVideo)
+            } catch (e: Exception) {
+                videoResult = null
+                res.error("camera", e.message, null)
+            }
+        } else {
+            videoResult = null
+            res.error("permission", "Нет разрешения сохранять видео в Галерею", null)
+        }
+    }
+
+    /** Удалить файл, созданный, но не записанный (отмена или ошибка). */
+    private fun cleanupPending() {
+        try {
+            videoPendingUri?.let { contentResolver.delete(it, null, null) }
+            videoPendingFile?.let { if (it.exists()) it.delete() }
+        } catch (_: Exception) {
+        }
+        videoPendingUri = null
+        videoPendingFile = null
+    }
+
+    private fun openVideo(path: String, result: MethodChannel.Result) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(pathToUri(path), "video/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Открыть видео"))
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("open", "Не получилось открыть видео", null)
+        }
+    }
+
+    private fun shareVideo(path: String, result: MethodChannel.Result) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "video/*"
+                putExtra(Intent.EXTRA_STREAM, pathToUri(path))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Поделиться видео"))
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("share", "Не получилось поделиться видео", null)
+        }
+    }
+
+    private fun deleteVideo(path: String, result: MethodChannel.Result) {
+        try {
+            val ok = if (path.startsWith("content://")) {
+                contentResolver.delete(Uri.parse(path), null, null) > 0
+            } else {
+                val f = File(path)
+                f.exists() && f.delete()
+            }
+            result.success(ok)
+        } catch (e: Exception) {
+            result.success(false)
+        }
+    }
+
+    private fun contentUriFor(file: File): Uri =
+        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+
+    private fun pathToUri(path: String): Uri =
+        if (path.startsWith("content://")) Uri.parse(path) else contentUriFor(File(path))
+
+    // -----------------------------------------------------------------------
+    // Таймер отдыха
+    // -----------------------------------------------------------------------
 
     /** Две короткие вибрации, чтобы не смотреть на экран. */
     private fun vibrateNow() {

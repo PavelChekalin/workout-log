@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Какие папки приложение отдаёт другим программам (камера, плеер,
+     шаринг). Здесь — свои папки видео: память приложения и
+     Movies/WorkoutLog на Android 8-9. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path
+        name="app_movies"
+        path="Movies/"/>
+    <external-path
+        name="public_movies"
+        path="Movies/WorkoutLog/"/>
+    <files-path
+        name="internal_files"
+        path="."/>
+</paths>

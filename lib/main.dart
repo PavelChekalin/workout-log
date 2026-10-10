@@ -9,6 +9,7 @@ import 'data.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'ui.dart';
+import 'video_bridge.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -466,6 +467,12 @@ class _MainScreenState extends State<MainScreen> {
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Видео',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.videocam_outlined, size: 20, color: _cs.primary),
+                  onPressed: () => _addVideo(exercise),
+                ),
                 if (exercise.techId != null)
                   IconButton(
                     tooltip: 'Техника',
@@ -507,6 +514,7 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
             ...repo.people.map((p) => _personRow(exercise, p)),
+            ..._videoRows(exercise),
           ],
         ),
       ),
@@ -564,6 +572,139 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
+  }
+
+  // ---------- Видео ----------
+
+  /// Предложить выбрать: записать видео сейчас или взять уже записанное
+  /// на телефоне. Оба варианта дают путь к файлу — дальше всё одинаково.
+  Future<void> _addVideo(Exercise exercise) async {
+    final how = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text('Видео к упражнению',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined),
+              title: const Text('Записать видео'),
+              subtitle: const Text('Откроется камера телефона'),
+              onTap: () => Navigator.pop(context, 'record'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Взять готовое видео'),
+              subtitle: const Text('Выбрать из памяти телефона'),
+              onTap: () => Navigator.pop(context, 'pick'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (how == null || !mounted) return;
+
+    String? path;
+    try {
+      path = how == 'record'
+          ? await VideoBridge.record(toGallery: repo.videoStorage == 'gallery')
+          : await VideoBridge.pick();
+    } on VideoException catch (e) {
+      _videoError(e.message);
+      return;
+    }
+    if (path == null || path.isEmpty) return; // отменили
+    repo.addVideo(selectedDate, exercise.id, path);
+    if (mounted) setState(() {});
+  }
+
+  List<Widget> _videoRows(Exercise exercise) {
+    final items = repo.videosFor(selectedDate, exercise.id);
+    if (items.isEmpty) return const [];
+    return [
+      const Divider(height: 1),
+      for (final v in items)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              const Icon(Icons.movie_outlined, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _videoLabel(v),
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Поделиться',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.share, size: 18),
+                onPressed: () => _shareVideo(v),
+              ),
+              IconButton(
+                tooltip: 'Убрать из журнала',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                onPressed: () => _confirmDeleteVideo(v),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  String _videoLabel(VideoNote v) {
+    final t = DateTime.fromMillisecondsSinceEpoch(v.createdAt);
+    final hm =
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final where = v.path.startsWith('content://') ? 'Галерея' : 'память телефона';
+    return 'Видео · $hm · $where';
+  }
+
+  Future<void> _shareVideo(VideoNote v) async {
+    try {
+      await VideoBridge.share(v.path);
+    } on VideoException catch (e) {
+      _videoError(e.message);
+    }
+  }
+
+  void _confirmDeleteVideo(VideoNote v) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Убрать видео?'),
+        content: const Text(
+            'Запись исчезнет из журнала. Сам файл видео при этом может '
+            'остаться на телефоне.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await VideoBridge.delete(v.path);
+              repo.removeVideo(v);
+              if (mounted) setState(() {});
+            },
+            child: const Text('Убрать'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _videoError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---------- Диалоги ----------
@@ -740,6 +881,9 @@ class _SetsDialogState extends State<_SetsDialog> {
   final _reps = TextEditingController();
   static const List<String> _quickReps = ['6', '8', '10', '12', '15'];
 
+  /// Быстрые прибавки веса в кг.
+  static const List<double> _quickWeight = [10, 5, 2.5, 1];
+
   @override
   void initState() {
     super.initState();
@@ -794,6 +938,31 @@ class _SetsDialogState extends State<_SetsDialog> {
     Repository.instance.save();
     setState(() {});
   }
+
+  /// Подпись плитки веса: "+2,5" — с русской запятой.
+  String _fmtDelta(double d) => '+${fmtNumber(d).replaceAll('.', ',')}';
+
+  /// Прибавить вес к тому, что уже стоит в поле (не заменять).
+  /// Пустое поле = 0. Округление до сотых гасит двоичные хвосты.
+  void _addWeight(double delta) {
+    final cur =
+        double.tryParse(_weight.text.trim().replaceAll(',', '.')) ?? 0;
+    final sum = ((cur + delta) * 100).round() / 100;
+    _weight.text = fmtNumber(sum);
+  }
+
+  /// Компактная плитка, чтобы целая строка влезала на экран телефона.
+  Widget _quickChip(String label, VoidCallback onPressed) => ActionChip(
+        label: Text(label),
+        onPressed: () {
+          onPressed();
+          setState(() {});
+        },
+        labelStyle: const TextStyle(fontSize: 13),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -860,40 +1029,38 @@ class _SetsDialogState extends State<_SetsDialog> {
               ),
               const SizedBox(height: 12),
             ],
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _weight,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Вес, кг',
-                      hintText: 'пусто = без веса',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _reps,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Повторы'),
-                    onSubmitted: (_) => _addSet(),
-                  ),
-                ),
-              ],
+            TextField(
+              controller: _weight,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Вес, кг',
+                hintText: 'пусто = без веса',
+              ),
             ),
             const SizedBox(height: 8),
             Wrap(
-              spacing: 6,
+              spacing: 4,
+              runSpacing: 4,
               children: [
-                for (final r in _quickReps)
-                  ActionChip(
-                    label: Text(r),
-                    onPressed: () => setState(() => _reps.text = r),
-                  ),
+                for (final d in _quickWeight)
+                  _quickChip(_fmtDelta(d), () => _addWeight(d)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reps,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Повторы'),
+              onSubmitted: (_) => _addSet(),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final r in _quickReps) _quickChip(r, () => _reps.text = r),
               ],
             ),
           ],

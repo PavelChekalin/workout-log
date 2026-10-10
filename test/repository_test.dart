@@ -181,6 +181,47 @@ void main() {
     expect(repo.noteFor(d), isNull);
   });
 
+  test('видео: привязка к дате и упражнению, своё в списке первое', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final ex1 = repo.addExercise('Жим лёжа', {5});
+    final ex2 = repo.addExercise('Присед', {5});
+    final d = DateTime(2026, 10, 11);
+    expect(repo.videosFor(d, ex1.id), isEmpty);
+
+    repo.addVideo(d, ex1.id, 'content://media/1');
+    repo.addVideo(d, ex2.id, '/storage/app/WL_2.mp4');
+    repo.addVideo(DateTime(2026, 10, 4), ex1.id, '/storage/app/WL_3.mp4');
+
+    // Свежее видео идёт первым, чужие упражнения/даты не попадают.
+    final list = repo.videosFor(d, ex1.id);
+    expect(list, hasLength(1));
+    expect(list.single.path, 'content://media/1');
+    expect(repo.videosFor(d, ex2.id).single.path, '/storage/app/WL_2.mp4');
+    expect(repo.videosFor(DateTime(2026, 10, 4), ex1.id), hasLength(1));
+
+    // Дата с видео отмечается в календаре.
+    expect(repo.recordedDates(), contains('2026-10-11'));
+
+    // Убираем — запись уходит из журнала.
+    repo.removeVideo(list.single);
+    expect(repo.videosFor(d, ex1.id), isEmpty);
+
+    // JSON содержит только путь, не сам файл.
+    await repo.save();
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('workout_log_v1')!;
+    expect(raw, contains('WL_2.mp4'));
+  });
+
+  test('куда сохранять видео: по умолчанию Галерея, выбор сохраняется', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    expect(repo.videoStorage, 'gallery');
+    await repo.setVideoStorage('app');
+    expect(Repository.instance.videoStorage, 'app');
+  });
+
   test('«повторить прошлый раз» берёт самую свежую прошлую тренировку', () async {
     final repo = Repository.instance;
     await repo.init();
