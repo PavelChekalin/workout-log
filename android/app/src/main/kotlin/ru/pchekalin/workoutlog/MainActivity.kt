@@ -31,12 +31,17 @@ class MainActivity : FlutterActivity() {
     private val rcVideo = 7711
     private val rcStorage = 7712
     private val rcPick = 7713
+    private val rcMedia = 7714
 
     // Состояние одной записи видео — живёт, пока открыта камера.
     private var videoResult: MethodChannel.Result? = null
     private var videoPendingToGallery = false
     private var videoPendingFile: File? = null
     private var videoPendingUri: Uri? = null
+
+    // Отложенное действие, пока человек отвечает на запрос разрешения.
+    private var mediaAction: (() -> Unit)? = null
+    private var mediaResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -70,9 +75,23 @@ class MainActivity : FlutterActivity() {
                     "record" -> startRecordVideo(
                         call.argument<Boolean>("toGallery") ?: true, result
                     )
-                    "pick" -> pickVideo(result)
-                    "open" -> openVideo(call.argument<String>("path") ?: "", result)
-                    "share" -> shareVideo(call.argument<String>("path") ?: "", result)
+                    "pick" -> withMediaPermission(result) { pickVideo(result) }
+                    "open" -> {
+                        val path = call.argument<String>("path") ?: ""
+                        if (path.startsWith("content://")) {
+                            withMediaPermission(result) { openVideo(path, result) }
+                        } else {
+                            openVideo(path, result)
+                        }
+                    }
+                    "share" -> {
+                        val path = call.argument<String>("path") ?: ""
+                        if (path.startsWith("content://")) {
+                            withMediaPermission(result) { shareVideo(path, result) }
+                        } else {
+                            shareVideo(path, result)
+                        }
+                    }
                     "delete" -> deleteVideo(call.argument<String>("path") ?: "", result)
                     else -> result.notImplemented()
                 }
@@ -82,6 +101,34 @@ class MainActivity : FlutterActivity() {
     // -----------------------------------------------------------------------
     // Видео
     // -----------------------------------------------------------------------
+
+    /**
+     * Android 13+ (и частично ниже) требует разрешение на доступ к видео
+     * из Галереи. Спрашиваем один раз; пока человек отвечает — держим
+     * действие, после «Разрешить» выполняем.
+     */
+    private fun withMediaPermission(
+        result: MethodChannel.Result, action: () -> Unit
+    ) {
+        val needed = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (ContextCompat.checkSelfPermission(this, needed)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            action()
+            return
+        }
+        if (mediaAction != null) {
+            result.error("busy", "Окно уже открыто", null)
+            return
+        }
+        mediaAction = action
+        mediaResult = result
+        ActivityCompat.requestPermissions(this, arrayOf(needed), rcMedia)
+    }
 
     /**
      * Открыть штатную камеру. Камера пишет в наш файл (EXTRA_OUTPUT) —
@@ -279,6 +326,24 @@ class MainActivity : FlutterActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == rcMedia) {
+            val action = mediaAction
+            val res = mediaResult
+            mediaAction = null
+            mediaResult = null
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                action?.invoke()
+            } else {
+                res?.error(
+                    "permission",
+                    "Нет разрешения читать видео из Галереи. Разрешите доступ "
+                        + "к видео в настройках приложения.", null
+                )
+            }
+            return
+        }
         if (requestCode != rcStorage) return
         val res = videoResult ?: return
         if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {

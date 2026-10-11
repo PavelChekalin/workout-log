@@ -1,5 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Читать видео из Галереи (выбранное готовое и свои записи из MediaStore).
+         На Android 13+ действует READ_MEDIA_VIDEO, ниже — READ_EXTERNAL_STORAGE. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <application
         android:label="Журнал тренировок"
         android:name="${applicationName}"
