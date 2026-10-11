@@ -379,16 +379,24 @@ class MainActivity : FlutterActivity() {
                 "WorkoutVideo", "open: path=$path uri=$uri exists=" +
                     (if (path.startsWith("content://")) "?" else File(path).exists().toString())
             )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            val view = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "video/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            // Сначала пробуем открыть напрямую; если плеер сам не нашёлся —
-            // показываем список приложений.
+            // Сначала пробуем «одолжить» плееру доступ (нужно для наших
+            // файлов). Если система запретила (частый случай с видео из
+            // Галереи) — открываем без одолжения: плеер телефона сам имеет
+            // доступ к галерее.
             try {
-                startActivity(intent)
+                startActivity(
+                    Intent(view).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
+            } catch (e: SecurityException) {
+                startActivity(view)
             } catch (e: ActivityNotFoundException) {
-                startActivity(Intent.createChooser(intent, "Открыть видео"))
+                startActivity(
+                    Intent.createChooser(view, "Открыть видео")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
             }
             result.success(null)
         } catch (e: Exception) {
@@ -399,15 +407,22 @@ class MainActivity : FlutterActivity() {
 
     private fun shareVideo(path: String, result: MethodChannel.Result) {
         try {
-            val intent = Intent(Intent.ACTION_SEND).apply {
+            val uri = pathToUri(path)
+            val send = Intent(Intent.ACTION_SEND).apply {
                 type = "video/*"
-                putExtra(Intent.EXTRA_STREAM, pathToUri(path))
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_STREAM, uri)
             }
-            startActivity(Intent.createChooser(intent, "Поделиться видео"))
+            try {
+                startActivity(
+                    Intent.createChooser(send, "Поделиться видео")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
+            } catch (e: SecurityException) {
+                startActivity(Intent.createChooser(send, "Поделиться видео"))
+            }
             result.success(null)
         } catch (e: Exception) {
-            result.error("share", "Не получилось поделиться видео", null)
+            result.error("share", "Не получилось поделиться видео: ${e.message}", null)
         }
     }
 
