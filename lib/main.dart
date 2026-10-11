@@ -629,32 +629,37 @@ class _MainScreenState extends State<MainScreen> {
     return [
       const Divider(height: 1),
       for (final v in items)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            children: [
-              const Icon(Icons.movie_outlined, size: 18),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _videoLabel(v),
-                  style: const TextStyle(fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _playVideo(v),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(Icons.play_circle_outline,
+                    size: 20, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _videoLabel(v),
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Поделиться',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.share, size: 18),
-                onPressed: () => _shareVideo(v),
-              ),
-              IconButton(
-                tooltip: 'Убрать из журнала',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.delete_outline, size: 18),
-                onPressed: () => _confirmDeleteVideo(v),
-              ),
-            ],
+                IconButton(
+                  tooltip: 'Поделиться',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.share, size: 18),
+                  onPressed: () => _shareVideo(v),
+                ),
+                IconButton(
+                  tooltip: 'Убрать из журнала',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  onPressed: () => _confirmDeleteVideo(v),
+                ),
+              ],
+            ),
           ),
         ),
     ];
@@ -666,6 +671,14 @@ class _MainScreenState extends State<MainScreen> {
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
     final where = v.path.startsWith('content://') ? 'Галерея' : 'память телефона';
     return 'Видео · $hm · $where';
+  }
+
+  Future<void> _playVideo(VideoNote v) async {
+    try {
+      await VideoBridge.open(v.path);
+    } on VideoException catch (e) {
+      _videoError(e.message);
+    }
   }
 
   Future<void> _shareVideo(VideoNote v) async {
