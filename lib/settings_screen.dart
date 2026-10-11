@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'data.dart';
 import 'ui.dart';
@@ -199,7 +201,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const _SectionTitle('О программе'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('О программе'),
+              subtitle: const Text('Версия, что за приложение и где данные'),
+              onTap: _showAbout,
+            ),
+          ),
           const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAbout() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Журнал тренировок'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Версия ${info.version}+${info.buildNumber}'),
+              const SizedBox(height: 12),
+              const Text(
+                'Дневник тренировок для себя и друзей: подходы, веса, '
+                'статистика, таймер отдыха и заметки.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Все данные хранятся только на этом устройстве — '
+                'интернет не используется. Копию можно сохранить '
+                'и восстановить в разделе «Данные».',
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Участников: ${repo.people.length} · '
+                'Упражнений: ${repo.exercises.length} · '
+                'Записей: ${repo.sessions.length}',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Закрыть'),
+          ),
         ],
       ),
     );
@@ -212,12 +273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: personColor(person.id).withValues(alpha: 0.25),
-          child: Text(personInitial(person.name),
-              style: TextStyle(
-                  color: personColor(person.id), fontWeight: FontWeight.bold)),
-        ),
+        leading: personAvatar(person, radius: 20),
         title: Text(person.name),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -239,35 +295,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showPersonDialog(Person? person) async {
-    final controller = TextEditingController(text: person?.name ?? '');
-    final name = await showDialog<String>(
+    final res = await showDialog<_PersonResult>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(person == null ? 'Новый участник' : 'Изменить имя'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Имя'),
-          onSubmitted: (v) => Navigator.pop(context, v.trim()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
+      builder: (_) => _PersonDialog(person: person),
     );
-    if (name == null || name.isEmpty) return;
+    if (res == null || res.name.isEmpty) return;
     if (person == null) {
-      repo.addPerson(name);
+      final p = repo.addPerson(res.name);
+      if (res.photo != null) repo.setAvatar(p, res.photo);
     } else {
-      repo.renamePerson(person, name);
+      repo.renamePerson(person, res.name);
+      // Фото может измениться (в т.ч. на null — «убрать фото»),
+      // поэтому ставим всегда, если оно не совпадает с текущим.
+      if (!_sameBytes(person.avatar, res.photo)) {
+        repo.setAvatar(person, res.photo);
+      }
     }
     setState(() {});
+  }
+
+  /// Совпадают ли два фото (или оба пустые).
+  static bool _sameBytes(Uint8List? a, Uint8List? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _confirmDelete(Person person) {
@@ -371,6 +426,140 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+/// Результат диалога участника: имя и выбранное фото (null — фото нет).
+class _PersonResult {
+  final String name;
+  final Uint8List? photo;
+  const _PersonResult(this.name, this.photo);
+}
+
+/// Диалог участника: имя + фото-аватарка (выбрать из галереи или убрать).
+/// Ничего не пишет в хранилище — результат применяет вызвавшая сторона.
+class _PersonDialog extends StatefulWidget {
+  final Person? person;
+  const _PersonDialog({this.person});
+
+  @override
+  State<_PersonDialog> createState() => _PersonDialogState();
+}
+
+class _PersonDialogState extends State<_PersonDialog> {
+  late final TextEditingController _controller;
+  Uint8List? _photo;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.person?.name ?? '');
+    _photo = widget.person?.avatar;
+    // Чтобы буква в кружке обновлялась, пока печатаете имя.
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      setState(() => _photo = bytes);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Не получилось выбрать фото')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _save() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(context, _PersonResult(name, _photo));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Превью: фото из диалога, буква — по набираемому имени.
+    final previewPerson = Person(
+      id: widget.person?.id ?? 'preview',
+      name: _controller.text.trim(),
+      avatar: _photo,
+    );
+
+    return AlertDialog(
+      title: Text(widget.person == null ? 'Новый участник' : 'Участник'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                personAvatar(previewPerson, radius: 40),
+                Material(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _pickPhoto,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _pickPhoto,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: Text(_photo == null ? 'Выбрать фото' : 'Заменить фото'),
+            ),
+            if (_photo != null)
+              TextButton.icon(
+                onPressed: () => setState(() => _photo = null),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Убрать фото'),
+              ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Имя'),
+              onSubmitted: (_) => _save(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        FilledButton(onPressed: _save, child: const Text('Сохранить')),
+      ],
+    );
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workoutlog/catalog.dart';
@@ -66,7 +68,7 @@ void main() {
     expect(repo.lastWeekSets(today, ex.id, p.id), isNull);
   });
 
-  test('рекорд за всё время — лучший подход по весу × повторениям', () async {
+  test('рекорд за всё время — самый тяжёлый взятый вес', () async {
     final repo = Repository.instance;
     await repo.init();
     final ex = repo.addExercise('Тяга', {5});
@@ -74,18 +76,46 @@ void main() {
 
     repo.sessionForOrNew(DateTime(2026, 9, 1), ex.id, p.id)
         .sets
-        .add(const SetEntry(80, 10)); // 800
+        .add(const SetEntry(80, 10)); // 800, но вес меньше
     repo.sessionForOrNew(DateTime(2026, 10, 9), ex.id, p.id)
         .sets
-        .add(const SetEntry(100, 4)); // 400
+        .add(const SetEntry(100, 4)); // самый тяжёлый вес
     repo.sessionForOrNew(DateTime(2026, 9, 20), ex.id, p.id)
         .sets
-        .add(const SetEntry(90, 6)); // 540
+        .add(const SetEntry(90, 6));
 
     final record = repo.personalRecord(ex.id, p.id);
     expect(record, isNotNull);
-    expect(record!.weight, 80);
-    expect(record.reps, 10);
+    expect(record!.weight, 100);
+    expect(record.reps, 4);
+
+    // При равном весе выигрывает больший повтор.
+    repo.sessionForOrNew(DateTime(2026, 9, 21), ex.id, p.id)
+        .sets
+        .add(const SetEntry(100, 8));
+    expect(repo.personalRecord(ex.id, p.id)!.reps, 8);
+  });
+
+  test('аватарка: фото сохраняется в JSON и переживает экспорт/импорт', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final p = repo.addPerson('Паша');
+    expect(p.avatar, isNull);
+
+    final photo = Uint8List.fromList([1, 2, 3, 4, 5]);
+    repo.setAvatar(p, photo);
+    await repo.save();
+    final dump = repo.exportJson();
+    expect(dump, contains('"av"'));
+
+    repo.people.clear();
+    expect(repo.importJson(dump), isTrue);
+    expect(repo.people.single.avatar, isNotNull);
+    expect(repo.people.single.avatar!, photo);
+
+    // Убрать фото тоже можно.
+    repo.setAvatar(repo.people.single, null);
+    expect(repo.people.single.avatar, isNull);
   });
 
   test('нельзя удалить последнего человека', () async {

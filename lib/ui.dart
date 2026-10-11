@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'data.dart';
+
 /// Основной акцентный цвет приложения.
 const Color kSeed = Color(0xFF00E0A4);
 
@@ -24,6 +26,26 @@ Color personColor(String id) {
 
 String personInitial(String name) =>
     name.isEmpty ? '?' : name.substring(0, 1).toUpperCase();
+
+/// Кружок участника: фото-аватарка, если есть, иначе буква имени.
+/// Цвет буквы и подложка — устойчивые по id человека.
+Widget personAvatar(Person person, {double radius = 14}) {
+  final color = personColor(person.id);
+  final photo = person.avatar;
+  final fontSize = (radius * 0.85).clamp(8.0, 20.0);
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: color.withValues(alpha: 0.25),
+    backgroundImage: photo == null ? null : MemoryImage(photo),
+    child: photo != null
+        ? null
+        : Text(
+            personInitial(person.name),
+            style: TextStyle(
+                color: color, fontWeight: FontWeight.bold, fontSize: fontSize),
+          ),
+  );
+}
 
 /// Число с разделителями тысяч: 12500 -> "12 500".
 String grouped(num v) {

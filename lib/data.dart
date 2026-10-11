@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,12 +12,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Person {
   final String id;
   String name;
-  Person({required this.id, required this.name});
 
-  factory Person.fromJson(Map<String, dynamic> j) =>
-      Person(id: j['id'] as String, name: j['name'] as String);
+  /// Фото-аватарка (сжатый JPEG байтами). null — рисуем букву имени.
+  /// Хранится прямо в JSON (base64), поэтому переживает экспорт/импорт.
+  Uint8List? avatar;
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+  Person({required this.id, required this.name, this.avatar});
+
+  factory Person.fromJson(Map<String, dynamic> j) => Person(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        avatar: j['av'] == null
+            ? null
+            : base64Decode(j['av'] as String),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        if (avatar != null) 'av': base64Encode(avatar!),
+      };
 }
 
 /// Упражнение: название + дни недели (1 = Пн ... 7 = Вс).
@@ -284,6 +299,12 @@ class Repository {
     save();
   }
 
+  /// Поставить или убрать фото-аватарку участника.
+  void setAvatar(Person p, Uint8List? photo) {
+    p.avatar = photo;
+    save();
+  }
+
   /// Удаление человека со всеми его записями. Нельзя удалить последнего.
   bool deletePerson(Person p) {
     if (people.length <= 1) return false;
@@ -373,17 +394,29 @@ class Repository {
     return best.sets.last;
   }
 
-  /// Рекорд за всё время: лучший подход человека по упражнению (вес × повторы).
+  /// Рекорд за всё время: самый тяжёлый взятый вес человека по упражнению.
+  /// При одинаковом весе выигрывает тот, кто сделал больше повторений.
+  /// Если веса не было вовсе (упражнение без веса) — берём больше повторов.
   SetEntry? personalRecord(String exerciseId, String personId) {
     SetEntry? best;
-    var bestScore = -1.0;
+    var bestWeight = -1.0;
+    var bestReps = -1;
+    var seenWeight = false;
     for (final s in sessions) {
       if (s.exerciseId != exerciseId || s.personId != personId) continue;
       for (final e in s.sets) {
-        final score = (e.weight ?? 0) * e.reps;
-        if (best == null || score > bestScore) {
+        final w = e.weight;
+        if (w != null) {
+          if (!seenWeight || w > bestWeight ||
+              (w == bestWeight && e.reps > bestReps)) {
+            best = e;
+            bestWeight = w;
+            bestReps = e.reps;
+            seenWeight = true;
+          }
+        } else if (!seenWeight && e.reps > bestReps) {
           best = e;
-          bestScore = score;
+          bestReps = e.reps;
         }
       }
     }

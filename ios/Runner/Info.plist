@@ -30,6 +30,8 @@
 	<string>Камера нужна, чтобы записывать видео тренировок.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Чтобы сохранять записанные видео в Фотоальбом, когда выбран вариант «Галерея».</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Чтобы выбрать фото для аватарки участника.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -331,20 +331,11 @@ class _MainScreenState extends State<MainScreen> {
   /// Итог дня одного участника: подходы · тоннаж.
   Widget _personDayRow(Person person) {
     final (setCount, vol) = repo.dayStats(selectedDate, person.id);
-    final color = personColor(person.id);
     return Padding(
       padding: const EdgeInsets.only(left: 22, bottom: 2),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 9,
-            backgroundColor: color.withValues(alpha: 0.25),
-            child: Text(
-              personInitial(person.name),
-              style: TextStyle(
-                  color: color, fontWeight: FontWeight.bold, fontSize: 8),
-            ),
-          ),
+          personAvatar(person, radius: 9),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -535,15 +526,7 @@ class _MainScreenState extends State<MainScreen> {
         padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: color.withValues(alpha: 0.25),
-              child: Text(
-                personInitial(person.name),
-                style: TextStyle(
-                    color: color, fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ),
+            personAvatar(person, radius: 14),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -989,13 +972,7 @@ class _SetsDialogState extends State<_SetsDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: color.withValues(alpha: 0.25),
-            child: Text(personInitial(widget.person.name),
-                style: TextStyle(
-                    color: color, fontWeight: FontWeight.bold, fontSize: 12)),
-          ),
+          personAvatar(widget.person, radius: 14),
           const SizedBox(width: 10),
           Expanded(child: Text('${widget.person.name} · ${widget.exercise.name}')),
         ],

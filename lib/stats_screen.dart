@@ -113,13 +113,7 @@ class _StatsScreenState extends State<StatsScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: color.withValues(alpha: 0.25),
-                  child: Text(personInitial(person.name),
-                      style: TextStyle(
-                          color: color, fontWeight: FontWeight.bold, fontSize: 13)),
-                ),
+                personAvatar(person, radius: 15),
                 const SizedBox(width: 10),
                 Text(person.name,
                     style: const TextStyle(
@@ -136,9 +130,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   child: _statCell('Прошлая', lastWeek, color),
                 ),
                 Expanded(
-                  child: _statCell('Рекорд', record == null ? [] : [record],
-                      color,
-                      icon: Icons.emoji_events),
+                  child: _recordCell(record, color),
                 ),
               ],
             ),
@@ -148,31 +140,55 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _statCell(String title, List<SetEntry> sets, Color color,
-      {IconData? icon}) {
-    final best = _best(sets);
+  /// Ячейка недели: сколько подходов + три лучших (лучший — цветом).
+  Widget _statCell(String title, List<SetEntry> sets, Color color) {
+    final top = _top(sets, 3);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: TextStyle(
+                fontSize: 11.5,
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 3),
+        Text(
+          sets.isEmpty ? '—' : '${sets.length} подх.',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        for (var i = 0; i < top.length; i++)
+          Text(
+            fmtSet(top[i]),
+            style: i == 0
+                ? TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15, color: color)
+                : TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+      ],
+    );
+  }
+
+  /// Ячейка рекорда: самый тяжёлый взятый вес за всё время.
+  Widget _recordCell(SetEntry? record, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            if (icon != null) ...[
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 3),
-            ],
-            Text(title,
+            Icon(Icons.emoji_events, size: 14, color: color),
+            const SizedBox(width: 3),
+            Text('Рекорд',
                 style: TextStyle(
                     fontSize: 11.5,
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
         ),
         const SizedBox(height: 3),
+        const Text('за всё время',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         Text(
-          sets.isEmpty ? '—' : '${sets.length} подх.',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        ),
-        Text(
-          best == null ? '' : fmtSet(best),
+          record == null ? '—' : fmtSet(record),
           style: TextStyle(
               fontWeight: FontWeight.bold, fontSize: 15, color: color),
         ),
@@ -238,18 +254,12 @@ class _StatsScreenState extends State<StatsScreen> {
     return result;
   }
 
-  /// Лучший подход: по весу × повторениям.
-  SetEntry? _best(List<SetEntry> sets) {
-    SetEntry? best;
-    var score = -1.0;
-    for (final s in sets) {
-      final v = (s.weight ?? 0) * s.reps;
-      if (best == null || v > score) {
-        best = s;
-        score = v;
-      }
-    }
-    return best;
+  /// Лучшие подходы: по весу × повторениям, не больше [count].
+  List<SetEntry> _top(List<SetEntry> sets, int count) {
+    final sorted = [...sets]
+      ..sort((a, b) => ((b.weight ?? 0) * b.reps)
+          .compareTo((a.weight ?? 0) * a.reps));
+    return sorted.take(count).toList();
   }
 
   /// График «лучший вес по датам» — по линии на каждого участника.
