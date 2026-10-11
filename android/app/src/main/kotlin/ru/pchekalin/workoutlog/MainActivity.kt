@@ -171,21 +171,21 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Выбрать уже записанное видео из памяти телефона. Берём URI с долгим
-     * разрешением на чтение — чтобы открыть/показать файл можно было и
-     * после перезагрузки. Сам файл не трогаем.
+     * Выбрать уже записанное видео из Галереи. Используем ACTION_PICK по
+     * MediaStore (а не документ-выборщик): тот возвращает обычный адрес
+     * `content://media/...`, который телефоны открывают в плеере без
+     * сучка. Сам файл не трогаем — в журнал кладём только адрес.
      */
     private fun pickVideo(result: MethodChannel.Result) {
         if (videoResult != null) {
             result.error("busy", "Окно уже открыто", null)
             return
         }
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).apply {
             type = "video/*"
-            addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            putExtra(
+                "android.intent.extra.MIME_TYPES",
+                arrayOf("video/mp4", "video/3gpp", "video/quicktime", "video/x-matroska")
             )
         }
         videoResult = result
@@ -193,7 +193,7 @@ class MainActivity : FlutterActivity() {
             startActivityForResult(intent, rcPick)
         } catch (e: ActivityNotFoundException) {
             videoResult = null
-            result.error("pick", "Не получилось открыть выбор файлов", null)
+            result.error("pick", "Не получилось открыть выбор видео", null)
         }
     }
 
@@ -309,14 +309,26 @@ class MainActivity : FlutterActivity() {
 
     private fun openVideo(path: String, result: MethodChannel.Result) {
         try {
+            val uri = pathToUri(path)
+            android.util.Log.w(
+                "WorkoutVideo", "open: path=$path uri=$uri exists=" +
+                    (if (path.startsWith("content://")) "?" else File(path).exists().toString())
+            )
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(pathToUri(path), "video/*")
+                setDataAndType(uri, "video/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Открыть видео"))
+            // Сначала пробуем открыть напрямую; если плеер сам не нашёлся —
+            // показываем список приложений.
+            try {
+                startActivity(intent)
+            } catch (e: ActivityNotFoundException) {
+                startActivity(Intent.createChooser(intent, "Открыть видео"))
+            }
             result.success(null)
         } catch (e: Exception) {
-            result.error("open", "Не получилось открыть видео", null)
+            android.util.Log.e("WorkoutVideo", "open failed", e)
+            result.error("open", "Не получилось открыть видео: ${e.message}", null)
         }
     }
 

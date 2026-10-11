@@ -35,8 +35,10 @@ class VideoBridge {
   static Future<void> open(String path) async {
     try {
       await _ch.invokeMethod<void>('open', {'path': path});
-    } catch (_) {
-      throw VideoException('Не получилось открыть видео');
+    } on PlatformException catch (e) {
+      throw VideoException(e.message ?? 'Не получилось открыть видео');
+    } on MissingPluginException {
+      throw VideoException('На этой платформе видео пока не работает');
     }
   }
 
@@ -44,8 +46,10 @@ class VideoBridge {
   static Future<void> share(String path) async {
     try {
       await _ch.invokeMethod<void>('share', {'path': path});
-    } catch (_) {
-      throw VideoException('Не получилось поделиться видео');
+    } on PlatformException catch (e) {
+      throw VideoException(e.message ?? 'Не получилось поделиться видео');
+    } on MissingPluginException {
+      throw VideoException('На этой платформе видео пока не работает');
     }
   }
 
