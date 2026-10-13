@@ -422,7 +422,7 @@ void main() {
     expect(repo.trainerProfile(p2.id), isNull);
   });
 
-  test('тренер: тренировка дня — начало, конец, продолжение', () async {
+  test('тренер: тренировка дня — начало, конец, продолжение отрезком', () async {
     final repo = Repository.instance;
     await repo.init();
     final day = DateTime(2026, 10, 14);
@@ -434,11 +434,27 @@ void main() {
 
     repo.endWorkout(day);
     expect(repo.workoutOn(day)!.running, isFalse);
+    final firstStart = w.start;
+    final firstEnd = w.end;
 
-    // Продолжение: конец снимается, старт остаётся прежним.
+    // Продолжение: прежний отрезок ушёл в done, пошёл новый.
     final resumed = repo.startWorkout(day);
     expect(resumed.running, isTrue);
-    expect(resumed.start, w.start);
+    expect(resumed.done, [[firstStart, firstEnd]]);
+    expect(resumed.end, isNull); // новый отрезок идёт
+
+    // Фазовые накопители переживают экспорт/импорт.
+    resumed.activeSec = 120;
+    resumed.restSec = 300;
+    resumed.pauseSec = 60;
+    final dump = repo.exportJson();
+    repo.workouts.clear();
+    expect(repo.importJson(dump), isTrue);
+    final loaded = repo.workoutOn(day)!;
+    expect(loaded.done, hasLength(1));
+    expect(loaded.activeSec, 120);
+    expect(loaded.restSec, 300);
+    expect(loaded.pauseSec, 60);
 
     repo.removeWorkout(day);
     expect(repo.workoutOn(day), isNull);

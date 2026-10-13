@@ -346,20 +346,26 @@ class Repository {
   /// Тренировка за дату (null — не запускали).
   WorkoutTime? workoutOn(DateTime date) => workouts[isoDate(date)];
 
-  /// Начать тренировку. Если уже идёт — вернёт как есть.
-  /// Если была завершена — продолжит (конец снимется, таймер идёт от старта).
+  /// Начать тренировку. Если уже идёт — вернёт как есть. Если была
+  /// завершена — продолжит НОВЫМ отрезком (прежний уходит в done, разрыв
+  /// между заходами не считается ни во времени, ни в калориях).
   WorkoutTime startWorkout(DateTime date) {
     final key = isoDate(date);
     final existing = workouts[key];
     if (existing != null) {
+      if (existing.running) {
+        return existing;
+      }
+      final finished = existing.end;
+      if (finished != null) {
+        existing.done.add([existing.start, finished]);
+      }
+      existing.start = _hhmm(DateTime.now());
       existing.end = null;
       save();
       return existing;
     }
-    final now = DateTime.now();
-    final w = WorkoutTime(
-        start: '${now.hour.toString().padLeft(2, '0')}:'
-            '${now.minute.toString().padLeft(2, '0')}');
+    final w = WorkoutTime(start: _hhmm(DateTime.now()));
     workouts[key] = w;
     save();
     return w;
@@ -368,12 +374,14 @@ class Repository {
   /// Завершить тренировку — поставить конец (текущее время).
   void endWorkout(DateTime date) {
     final w = workouts[isoDate(date)];
-    if (w == null) return;
-    final now = DateTime.now();
-    w.end = '${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}';
+    if (w == null || !w.running) return;
+    w.end = _hhmm(DateTime.now());
     save();
   }
+
+  static String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
 
   /// Полностью убрать тренировку дня (если передумали).
   void removeWorkout(DateTime date) {

@@ -6,11 +6,16 @@ import 'package:flutter/services.dart';
 import 'catalog.dart';
 import 'calendar_picker.dart';
 import 'data.dart';
+import 'kcal.dart';
+import 'programs.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
+import 'trainer_apply.dart';
+import 'trainer_logic.dart';
 import 'trainer_screen.dart';
 import 'ui.dart';
 import 'video_bridge.dart';
+import 'workout_panel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +60,22 @@ class _MainScreenState extends State<MainScreen> {
   DateTime? _restEndsAt;
   Timer? _restTicker;
 
+  /// Тикер активной тренировки: секунда в секунду крутится, пока тенировка
+  /// идёт (таймер панели + накопители фаз для калорий).
+  Timer? _workoutTicker;
+
+  /// Когда последний раз записывали подход (для фаз калорий).
+  DateTime? _lastSetAt;
+
+  /// Кто выбран в панели тренировки (для плана и калорий).
+  String? _panelPersonId;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureWorkoutTicker();
+  }
+
   void _refresh() {
     if (!repo.restTimerEnabled && _restEndsAt != null) _stopRest();
     setState(() {});
@@ -63,7 +84,10 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _restTicker?.cancel();
+    _workoutTicker?.cancel();
     TimerSignals.keepScreenOn(false);
+    // Фазовые накопители могли копиться без сохранения — сохраним.
+    if (repo.workoutOn(DateTime.now())?.running ?? false) repo.save();
     super.dispose();
   }
 
@@ -114,6 +138,170 @@ class _MainScreenState extends State<MainScreen> {
     if (end == null) return;
     _restEndsAt = end.add(Duration(seconds: seconds));
     if (mounted) setState(() {});
+  }
+
+  // ---------- Активная тренировка ----------
+
+  /// Запустить тикер, если тренировка сегодня идёт (например, открыли приложение).
+  void _ensureWorkoutTicker() {
+    final running = repo.workoutOn(DateTime.now())?.running ?? false;
+    if (running && _workoutTicker == null) {
+      _workoutTicker =
+          Timer.periodic(const Duration(seconds: 1), (_) => _onWorkoutTick());
+    } else if (!running && _workoutTicker != null) {
+      _workoutTicker?.cancel();
+      _workoutTicker = null;
+    }
+  }
+
+  void _onWorkoutTick() {
+    if (!mounted) return;
+    final w = repo.workoutOn(DateTime.now());
+    if (w == null || !w.running) {
+      _workoutTicker?.cancel();
+      _workoutTicker = null;
+      setState(() {});
+      return;
+    }
+    // Фаза по времени с последнего подхода и состоянию отдых-таймера.
+    final since = _lastSetAt == null
+        ? 999999
+        : DateTime.now().difference(_lastSetAt!).inSeconds;
+    final met = metForPhase(
+        sinceLastSetSec: since, restRunning: _restEndsAt != null);
+    if (met >= 6) {
+      w.activeSec++;
+    } else if (met >= 4) {
+      w.restSec++;
+    } else {
+      w.pauseSec++;
+    }
+    setState(() {});
+  }
+
+  void _startWorkout() {
+    repo.startWorkout(DateTime.now());
+    _lastSetAt = null; // до первого подхода — пауза, так честнее
+    _ensureWorkoutTicker();
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_startPhrase()), duration: const Duration(seconds: 2)));
+    setState(() {});
+  }
+
+  /// Напутствие на старте. Пока короткое — полный набор фраз по тонам
+  /// приходит на этапе 5.
+  String _startPhrase() {
+    switch (repo.trainerTone) {
+      case 'robot':
+        return 'Тренировка запущена. Таймер идёт.';
+      case 'buddy':
+        return 'Ну что, погнали! Размялся — в бой.';
+      default:
+        return 'Отлично, поехали! Дыши ровно и держи спину.';
+    }
+  }
+
+  /// Завершение: переспросить, показать итог.
+  Future<void> _endWorkoutDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Завершить тренировку?'),
+        content: const Text('Всё получилось? Время и калории зафиксируем.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Ещё нет')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Завершить')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final w = repo.workoutOn(DateTime.now());
+    if (w == null) return;
+    final elapsed =
+        workoutElapsedSec(done: w.done, start: w.start, end: w.end, now: DateTime.now());
+    final kcalByPerson = <Person, double?>{};
+    for (final p in repo.people) {
+      final weight = repo.trainerProfile(p.id)?.weight;
+      kcalByPerson[p] = weight == null
+          ? null
+          : kcalFromPhases(
+              activeSec: w.activeSec,
+              restSec: w.restSec,
+              pauseSec: w.pauseSec,
+              weightKg: weight.toDouble());
+    }
+    repo.endWorkout(DateTime.now());
+    _workoutTicker?.cancel();
+    _workoutTicker = null;
+    if (mounted) setState(() {});
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _WorkoutSummaryDialog(
+          elapsedSec: elapsed, kcalByPerson: kcalByPerson),
+    );
+  }
+
+  /// Строка плана для панели: следующее упражнение или итог дня.
+  String _planTextFor(Person p) {
+    final profile = repo.trainerProfile(p.id);
+    final program =
+        profile == null ? null : programById(profile.program);
+    if (profile == null ||
+        program == null ||
+        profile.startDate == null ||
+        profile.weekdays.isEmpty) {
+      return 'План появится после анкеты и программы — веди журнал как обычно.';
+    }
+    final today = DateTime.now();
+    final sessionDates = repo.sessions
+        .where((s) => s.personId == p.id && s.sets.isNotEmpty)
+        .map((s) => s.date)
+        .toSet();
+    final doneCount = completedSessionsSince(
+        startDate: profile.startDate!, recordedDates: sessionDates);
+    final planDay = todayPlanDay(
+        program: program,
+        weekdays: profile.weekdays,
+        today: today,
+        completedSessions: doneCount);
+
+    var done = 0;
+    String? next;
+    for (final e in planDay.exercises) {
+      final ex = exerciseByTech(repo, e.techId);
+      final s =
+          ex == null ? null : repo.sessionFor(today, ex.id, p.id);
+      if (s != null && s.sets.isNotEmpty) {
+        done++;
+        continue;
+      }
+      next ??= () {
+        final name = techById(e.techId)?.name ?? e.techId;
+        final w = profile.startWeights[e.techId];
+        final weight = w == null ? 'свой вес' : '${fmtKg(w)} кг';
+        final recorded = s == null ? 0 : s.sets.length;
+        return '$name — ${e.sets}×${e.label} @ $weight '
+            '(записано $recorded из ${e.sets})';
+      }();
+    }
+    if (next == null) {
+      return 'Весь план на сегодня выполнен! ($done из ${planDay.exercises.length})';
+    }
+    return 'Дальше по плану: $next · выполнено $done из ${planDay.exercises.length}';
+  }
+
+  int _setsTodayFor(Person p) {
+    final today = isoDate(DateTime.now());
+    var n = 0;
+    for (final s in repo.sessions) {
+      if (s.date == today && s.personId == p.id) n += s.sets.length;
+    }
+    return n;
   }
 
   ColorScheme get _cs => Theme.of(context).colorScheme;
@@ -168,6 +356,7 @@ class _MainScreenState extends State<MainScreen> {
           Column(
             children: [
               _dateBar(),
+              if (_selectedDateIsToday) _workoutSection(),
               _daySummary(),
               const Divider(height: 1),
               Expanded(
@@ -193,6 +382,67 @@ class _MainScreenState extends State<MainScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  bool get _selectedDateIsToday =>
+      isoDate(selectedDate) == isoDate(DateTime.now());
+
+  /// Кнопка «Начать/Продолжить тренировку» или панель идущей тренировки.
+  Widget _workoutSection() {
+    final now = DateTime.now();
+    final w = repo.workoutOn(now);
+    if (w == null || !w.running) {
+      final finished = w != null;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _startWorkout,
+            icon: Icon(finished ? Icons.replay : Icons.play_arrow),
+            label:
+                Text(finished ? 'Продолжить тренировку' : 'Начать тренировку'),
+          ),
+        ),
+      );
+    }
+
+    // Участники с известным весом — им тренер считает калории.
+    final people = repo.people
+        .where((p) => (repo.trainerProfile(p.id)?.weight ?? 0) > 0)
+        .toList();
+    final selectedId = () {
+      final cur = _panelPersonId;
+      if (cur != null && people.any((p) => p.id == cur)) return cur;
+      return people.isNotEmpty ? people.first.id : null;
+    }();
+    final selected = selectedId == null
+        ? null
+        : repo.people.firstWhere((p) => p.id == selectedId);
+    final weight =
+        selected == null ? null : repo.trainerProfile(selected.id)?.weight;
+
+    return WorkoutPanel(
+      elapsedSec: workoutElapsedSec(
+          done: w.done, start: w.start, end: w.end, now: now),
+      kcal: weight == null
+          ? null
+          : kcalFromPhases(
+              activeSec: w.activeSec,
+              restSec: w.restSec,
+              pauseSec: w.pauseSec,
+              weightKg: weight.toDouble()),
+      weightKnown: weight != null,
+      people: people,
+      selectedPersonId: selectedId ?? '',
+      onSelectPerson: (id) => setState(() => _panelPersonId = id),
+      planText: selected == null
+          ? 'Веди журнал как обычно.'
+          : _planTextFor(selected),
+      setsCount: selected == null ? 0 : _setsTodayFor(selected),
+      trainerLine: _startPhrase(),
+      onEnd: _endWorkoutDialog,
     );
   }
 
@@ -759,7 +1009,11 @@ class _MainScreenState extends State<MainScreen> {
         exercise: exercise,
         person: person,
         date: selectedDate,
-        onSetAdded: _startRest,
+        onSetAdded: () {
+          // Записанный подход — старт фазы «актив» для калорий.
+          _lastSetAt = DateTime.now();
+          _startRest();
+        },
       ),
     );
     setState(() {});
@@ -1347,6 +1601,64 @@ class _TechPickerState extends State<_TechPicker> {
 /// Сигналы «телефону» во время отдыха: экран не гаснет, пока идёт отсчёт,
 /// и оповещение (вибрация + звук) по концу. Если платформа этого не умеет —
 /// тихо ничего не делаем, таймер всё равно отсчитывает.
+/// Итог завершённой тренировки: длительность, ≈ккал по участникам,
+/// кнопка в «Тренер» — там «Итог тренировки» по каждому участнику.
+class _WorkoutSummaryDialog extends StatelessWidget {
+  final int elapsedSec;
+  final Map<Person, double?> kcalByPerson;
+
+  const _WorkoutSummaryDialog({
+    required this.elapsedSec,
+    required this.kcalByPerson,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final known = kcalByPerson.entries
+        .where((e) => e.value != null)
+        .toList();
+    return AlertDialog(
+      title: const Text('Тренировка завершена!'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Длительность: ${fmtDuration(elapsedSec)}'),
+          const SizedBox(height: 8),
+          if (known.isEmpty)
+            const Text(
+                'Калории не посчитали: в анкете нет веса ни у одного участника.')
+          else
+            ...known.map((e) => Text(
+                '${e.key.name}: ≈ ${e.value!.round()} ккал (грубая оценка)')),
+          const SizedBox(height: 8),
+          Text(
+            'Отметить, как прошло и какие веса взять дальше — '
+            'в разделе «Тренер».',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Закрыть'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(context);
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const TrainerScreen()));
+          },
+          child: const Text('Итог тренировки'),
+        ),
+      ],
+    );
+  }
+}
+
 class TimerSignals {
   static const MethodChannel _ch = MethodChannel('workout/timer');
 

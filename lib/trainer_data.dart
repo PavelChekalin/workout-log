@@ -100,19 +100,54 @@ class TrainerProfile {
 }
 
 /// Тренировка одного дня: начало 'HH:mm', конец — пока идёт, null.
+///
+/// Тренировку можно завершить и продолжить — каждый «заход» добавляет
+/// завершённый отрезок в [done], а общий таймер = сумма отрезков + текущий.
+/// Разрыв между завершением и продолжением НЕ считается (честно: на диване
+/// не горят калории).
+///
+/// Фазовые накопители (секунды актив/восстановление/пауза) хранятся здесь же:
+/// приложение считает их, пока открыт экран, и сохраняет при завершении.
 class WorkoutTime {
-  final String start;
+  String start;
   String? end;
 
-  WorkoutTime({required this.start, this.end});
+  /// Завершённые отрезки [['18:32','19:28'], ...].
+  final List<List<String>> done;
+
+  /// Секунды по фазам калорий (накоплено за все отрезки).
+  int activeSec;
+  int restSec;
+  int pauseSec;
+
+  WorkoutTime({
+    required this.start,
+    this.end,
+    List<List<String>>? done,
+    this.activeSec = 0,
+    this.restSec = 0,
+    this.pauseSec = 0,
+  }) : done = done ?? <List<String>>[];
 
   bool get running => end == null;
 
-  factory WorkoutTime.fromJson(Map<String, dynamic> j) =>
-      WorkoutTime(start: j['start'] as String? ?? '', end: j['end'] as String?);
+  factory WorkoutTime.fromJson(Map<String, dynamic> j) => WorkoutTime(
+        start: j['start'] as String? ?? '',
+        end: j['end'] as String?,
+        done: ((j['done'] as List?) ?? const [])
+            .map((e) => ((e as List).map((x) => '$x').toList()))
+            .toList(),
+        activeSec: (j['activeSec'] as num?)?.toInt() ?? 0,
+        restSec: (j['restSec'] as num?)?.toInt() ?? 0,
+        pauseSec: (j['pauseSec'] as num?)?.toInt() ?? 0,
+      );
 
   Map<String, dynamic> toJson() => {
         'start': start,
         if (end != null) 'end': end,
+        if (done.isNotEmpty) 'done': done,
+        if (activeSec > 0) 'activeSec': activeSec,
+        if (restSec > 0) 'restSec': restSec,
+        if (pauseSec > 0) 'pauseSec': pauseSec,
       };
 }
