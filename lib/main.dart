@@ -8,6 +8,7 @@ import 'calendar_picker.dart';
 import 'coach_lines.dart';
 import 'data.dart';
 import 'kcal.dart';
+import 'onboarding_screen.dart';
 import 'programs.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -93,6 +94,19 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _ensureWorkoutTicker();
+    // Первый запуск (в том числе после обновления приложения) — онбординг.
+    if (!repo.trainerOnboarded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const OnboardingScreen()))
+            .then((_) {
+          if (mounted) setState(() {});
+        });
+      });
+    }
   }
 
   void _refresh() {
