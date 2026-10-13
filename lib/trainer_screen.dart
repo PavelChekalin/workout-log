@@ -12,6 +12,7 @@ import 'catalog.dart';
 import 'coach_lines.dart';
 import 'data.dart';
 import 'programs.dart';
+import 'reminders.dart';
 import 'trainer_apply.dart';
 import 'trainer_data.dart';
 import 'trainer_logic.dart';
@@ -995,6 +996,11 @@ class _ProgramSetupScreenState extends State<ProgramSetupScreen> {
       limits: widget.limits,
       startWeights: startWeights,
     );
+    // Программа задала дни тренировок — пересчитать напоминания.
+    if (repo.remindersOn) {
+      final (h, m) = Reminders.parseTime(repo.remindersTime);
+      Reminders.reschedule(repo, enabled: true, hour: h, minute: m);
+    }
     Navigator.pop(context, true);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(created.isEmpty

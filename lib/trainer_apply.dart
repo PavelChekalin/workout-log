@@ -187,3 +187,37 @@ CycleReport buildCycleReport({
     ),
   );
 }
+
+/// Текст напоминания на день недели (§10): кто-то из участников
+/// тренируется — «Сегодня по плану — Паша: приседания, жим лёжа, тяга».
+/// В этот день никто не тренируется — null.
+String? reminderTextForWeekday({
+  required Repository repo,
+  required int weekday,
+}) {
+  final parts = <String>[];
+  for (final p in repo.people) {
+    final profile = repo.trainerProfile(p.id);
+    final program = profile == null ? null : programById(profile.program);
+    if (profile == null ||
+        program == null ||
+        profile.startDate == null ||
+        !profile.weekdays.contains(weekday)) {
+      continue;
+    }
+    final binding = planByWeekday(
+        program: program, weekdays: {weekday}, limits: profile.limits);
+    final names = <String>{};
+    for (final e in binding[weekday] ?? const <PlanExercise>[]) {
+      final full = techById(e.techId)?.name ?? e.techId;
+      // Короткое имя: первое слово строчными — «приседания», «жим», «тяга».
+      final short = full.split(' ').first.toLowerCase();
+      names.add(short);
+      if (names.length >= 3) break;
+    }
+    if (names.isEmpty) continue;
+    parts.add('${p.name}: ${names.join(', ')}');
+  }
+  if (parts.isEmpty) return null;
+  return 'Сегодня по плану — ${parts.join('; ')}';
+}

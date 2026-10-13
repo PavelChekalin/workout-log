@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workoutlog/data.dart';
 import 'package:workoutlog/programs.dart';
+import 'package:workoutlog/reminders.dart';
 import 'package:workoutlog/trainer_apply.dart';
 import 'package:workoutlog/trainer_data.dart';
 import 'package:workoutlog/trainer_logic.dart';
@@ -260,5 +261,51 @@ void main() {
     // Жим 70 → 75 — рекорд; присед одинаковый — не показываем.
     expect(report.records, contains('Жим лёжа: 70 → 75 кг'));
     expect(report.records.any((r) => r.contains('Присед')), isFalse);
+  });
+
+  // ---------- Напоминания ----------
+
+  test('напоминания: текст по дню недели из программ участников', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final pasha = repo.addPerson('Паша');
+    final anton = repo.addPerson('Антон');
+
+    // Без программ — в любой день тишина.
+    expect(reminderTextForWeekday(repo: repo, weekday: 1), isNull);
+
+    assignProgram(
+      repo: repo,
+      personId: pasha.id,
+      program: programById('cbl')!, // Грудь/Спина/Ноги
+      weekdays: {1, 3, 5},
+      limits: <String>{},
+    );
+
+    // Пн/Ср/Пт — тренировочные дни, текст с именем и упражнениями.
+    final mon = reminderTextForWeekday(repo: repo, weekday: 1);
+    expect(mon, startsWith('Сегодня по плану'));
+    expect(mon, contains('Паша:'));
+    // Вт/Чт/Сб/Вс — никто не тренируется.
+    expect(reminderTextForWeekday(repo: repo, weekday: 2), isNull);
+
+    // Антон тоже берёт программу — текст объединяет обоих.
+    assignProgram(
+      repo: repo,
+      personId: anton.id,
+      program: programById('strong_5x5')!, // A/B на все дни
+      weekdays: {1, 3, 5},
+      limits: <String>{},
+    );
+    final both = reminderTextForWeekday(repo: repo, weekday: 1)!;
+    expect(both, contains('Паша:'));
+    expect(both, contains('Антон:'));
+  });
+
+  test('напоминания: разбор времени — мусор не роняет', () {
+    expect(Reminders.parseTime('18:00'), (18, 0));
+    expect(Reminders.parseTime('7:05'), (7, 5));
+    expect(Reminders.parseTime('мусор'), (18, 0));
+    expect(Reminders.parseTime('25:99'), (23, 59)); // зажимаем в сутки
   });
 }

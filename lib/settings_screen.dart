@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'data.dart';
 import 'coach_lines.dart';
+import 'reminders.dart';
 import 'trainer_screen.dart';
 import 'ui.dart';
 
@@ -18,6 +19,47 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final repo = Repository.instance;
+
+  /// Пересчитать расписание напоминаний под текущие программы.
+  Future<void> _rescheduleReminders() async {
+    final (h, m) = Reminders.parseTime(repo.remindersTime);
+    await Reminders.reschedule(repo,
+        enabled: repo.remindersOn, hour: h, minute: m);
+  }
+
+  Future<void> _toggleReminders(bool on) async {
+    if (on) {
+      await Reminders.init();
+      final ok = await Reminders.requestPermission();
+      if (!ok) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Разрешение на уведомления не выдано. Разреши их для '
+                'приложения в настройках телефона — и включим напоминания.')));
+        return;
+      }
+    }
+    await repo.setReminders(on);
+    if (!mounted) return;
+    setState(() {});
+    await _rescheduleReminders();
+  }
+
+  Future<void> _pickReminderTime() async {
+    final (h, m) = Reminders.parseTime(repo.remindersTime);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: h, minute: m),
+    );
+    if (picked == null || !mounted) return;
+    final time =
+        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    await repo.setReminders(true, time: time);
+    if (!mounted) return;
+    setState(() {});
+    await _rescheduleReminders();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,9 +276,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: repo.remindersOn,
+                    title: const Text('Напоминания о тренировках'),
+                    subtitle: Text(repo.remindersOn
+                        ? 'В тренировочные дни, в ${repo.remindersTime}. '
+                            'Текст — из программ участников.'
+                        : 'Выключены. Включим — телефон напомнит '
+                            'в тренировочный день.'),
+                    onChanged: (v) => _toggleReminders(v),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule),
+                    title: const Text('Время напоминания'),
+                    trailing: Text(repo.remindersTime,
+                        style: Theme.of(context).textTheme.titleMedium),
+                    enabled: repo.remindersOn,
+                    onTap: repo.remindersOn ? _pickReminderTime : null,
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Text(
-                    'Напоминания о тренировках появятся в следующей версии.',
+                    'Напоминание приходит только в те дни, где у кого-то '
+                    'запланирована тренировка. Уведомления локальные — '
+                    'ничего не уходит в интернет.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -424,6 +494,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           FilledButton(
             onPressed: () {
               repo.deletePerson(person);
+              // Участник ушёл — его дни тренировок могли выпасть из текста
+              // напоминаний, пересчитаем.
+              if (repo.remindersOn) _rescheduleReminders();
               Navigator.pop(context);
               setState(() {});
             },

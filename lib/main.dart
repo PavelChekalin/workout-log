@@ -17,12 +17,20 @@ import 'trainer_screen.dart';
 import 'ui.dart';
 import 'video_bridge.dart';
 import 'workout_panel.dart';
+import 'reminders.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Repository.instance.init();
-  appThemeMode.value = themeModeFromName(Repository.instance.themeName);
+  final repo = Repository.instance;
+  await repo.init();
+  appThemeMode.value = themeModeFromName(repo.themeName);
   runApp(const WorkoutLogApp());
+  // Расписание напоминаний пересчитываем при каждом старте — так оно
+  // переживает перезагрузку телефона и смену программ участников.
+  if (repo.remindersOn) {
+    final (h, m) = Reminders.parseTime(repo.remindersTime);
+    Reminders.reschedule(repo, enabled: true, hour: h, minute: m);
+  }
 }
 
 class WorkoutLogApp extends StatelessWidget {

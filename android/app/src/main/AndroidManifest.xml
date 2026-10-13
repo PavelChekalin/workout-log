@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Напоминания о тренировках (локальные уведомления): POST_NOTIFICATIONS
+         нужен на Android 13+, RECEIVE_BOOT_COMPLETED — чтобы расписание
+         пережило перезагрузку телефона. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <!-- Читать видео из Галереи (выбранное готовое и свои записи из MediaStore).
          На Android 13+ действует READ_MEDIA_VIDEO, ниже — READ_EXTERNAL_STORAGE. -->
     <uses-permission
