@@ -731,6 +731,11 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _addPerson() async {
+    if (!repo.canAddPerson) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Лимит ${Repository.maxPeople} участников')));
+      return;
+    }
     final name = await _askName('Новый участник', '');
     if (name == null || name.isEmpty) return;
     repo.addPerson(name);

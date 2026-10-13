@@ -173,11 +173,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _SectionTitle('Участники'),
           ...repo.people.map(_personTile),
           const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: () => _showPersonDialog(null),
-            icon: const Icon(Icons.person_add),
-            label: const Text('Добавить участника'),
-          ),
+          if (repo.canAddPerson)
+            OutlinedButton.icon(
+              onPressed: () => _showPersonDialog(null),
+              icon: const Icon(Icons.person_add),
+              label: const Text('Добавить участника'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.person_off_outlined),
+              label: Text('Лимит ${Repository.maxPeople} участников'),
+            ),
           const _SectionTitle('Данные'),
           Card(
             color: Theme.of(context).colorScheme.surfaceContainerHigh,

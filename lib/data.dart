@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'trainer_data.dart';
+
 // ---------------------------------------------------------------------------
 // Модели
 // ---------------------------------------------------------------------------
@@ -237,6 +239,33 @@ class Repository {
   /// Записанные видео: только ссылки на файлы.
   final List<VideoNote> videos = [];
 
+  // ---------- Тренер (данные офлайн-тренера, блок "trainer" в JSON) ----------
+
+  /// Лимит участников (согласовано с Пашей 14.10: «чтобы весь зал не записался»).
+  static const int maxPeople = 4;
+
+  /// Уровень человечности реплик: 'robot' | 'coach' (по умолчанию) | 'buddy'.
+  String _trainerTone = 'coach';
+  String get trainerTone => _trainerTone;
+
+  /// Напоминания о тренировках: по умолчанию выключены (решение Паши 14.10).
+  bool _remindersOn = false;
+  bool get remindersOn => _remindersOn;
+
+  /// Во сколько напоминать ('HH:mm').
+  String _remindersTime = '18:00';
+  String get remindersTime => _remindersTime;
+
+  /// Приветствие-онбординг уже показывали.
+  bool _trainerOnboarded = false;
+  bool get trainerOnboarded => _trainerOnboarded;
+
+  /// Анкеты тренера по участникам (personId -> профиль).
+  final Map<String, TrainerProfile> trainerProfiles = {};
+
+  /// Тренировки по датам ('yyyy-MM-dd') — для панели активной тренировки.
+  final Map<String, WorkoutTime> workouts = {};
+
   /// Заметки к тренировке по датам ('yyyy-MM-dd').
   final Map<String, String> notes = {};
 
@@ -280,6 +309,78 @@ class Repository {
     await prefs.setString(_videoStorageKey, value);
   }
 
+  // ---------- Тренер: настройки ----------
+
+  Future<void> setTrainerTone(String tone) async {
+    _trainerTone = tone;
+    save();
+  }
+
+  Future<void> setReminders(bool on, {String? time}) async {
+    _remindersOn = on;
+    if (time != null) _remindersTime = time;
+    save();
+  }
+
+  void setTrainerOnboarded() {
+    _trainerOnboarded = true;
+    save();
+  }
+
+  /// Анкета участника (null — ещё не пройдена).
+  TrainerProfile? trainerProfile(String personId) => trainerProfiles[personId];
+
+  /// Создать или заменить анкету участника.
+  void setTrainerProfile(String personId, TrainerProfile profile) {
+    trainerProfiles[personId] = profile;
+    save();
+  }
+
+  void deleteTrainerProfile(String personId) {
+    trainerProfiles.remove(personId);
+    save();
+  }
+
+  // ---------- Тренер: время тренировок ----------
+
+  /// Тренировка за дату (null — не запускали).
+  WorkoutTime? workoutOn(DateTime date) => workouts[isoDate(date)];
+
+  /// Начать тренировку. Если уже идёт — вернёт как есть.
+  /// Если была завершена — продолжит (конец снимется, таймер идёт от старта).
+  WorkoutTime startWorkout(DateTime date) {
+    final key = isoDate(date);
+    final existing = workouts[key];
+    if (existing != null) {
+      existing.end = null;
+      save();
+      return existing;
+    }
+    final now = DateTime.now();
+    final w = WorkoutTime(
+        start: '${now.hour.toString().padLeft(2, '0')}:'
+            '${now.minute.toString().padLeft(2, '0')}');
+    workouts[key] = w;
+    save();
+    return w;
+  }
+
+  /// Завершить тренировку — поставить конец (текущее время).
+  void endWorkout(DateTime date) {
+    final w = workouts[isoDate(date)];
+    if (w == null) return;
+    final now = DateTime.now();
+    w.end = '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+    save();
+  }
+
+  /// Полностью убрать тренировку дня (если передумали).
+  void removeWorkout(DateTime date) {
+    workouts.remove(isoDate(date));
+    save();
+  }
+
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, jsonEncode(_toJson()));
@@ -293,6 +394,9 @@ class Repository {
     save();
     return p;
   }
+
+  /// Можно ли добавить ещё участника (лимит 4).
+  bool get canAddPerson => people.length < maxPeople;
 
   void renamePerson(Person p, String name) {
     p.name = name;
@@ -310,6 +414,7 @@ class Repository {
     if (people.length <= 1) return false;
     people.remove(p);
     sessions.removeWhere((s) => s.personId == p.id);
+    trainerProfiles.remove(p.id);
     save();
     return true;
   }
@@ -524,6 +629,8 @@ class Repository {
   String exportJson() => const JsonEncoder.withIndent('  ').convert(_toJson());
 
   /// Полностью заменяет данные содержимым JSON. true — успех.
+  /// Импорт авторитетен: если в файле нет блока trainer — настройки
+  /// тренера сбрасываются к значениям по умолчанию (импорт = полная замена).
   bool importJson(String raw) {
     try {
       _loadFrom(raw);
@@ -542,6 +649,13 @@ class Repository {
         'sessions': sessions.map((e) => e.toJson()).toList(),
         'notes': notes,
         'videos': videos.map((e) => e.toJson()).toList(),
+        'trainer': {
+          'tone': _trainerTone,
+          'reminders': {'on': _remindersOn, 'time': _remindersTime},
+          'onboarded': _trainerOnboarded,
+          'people': trainerProfiles.map((k, v) => MapEntry(k, v.toJson())),
+          'workouts': workouts.map((k, v) => MapEntry(k, v.toJson())),
+        },
       };
 
   void _loadFrom(String raw) {
@@ -551,6 +665,8 @@ class Repository {
     sessions.clear();
     notes.clear();
     videos.clear();
+    trainerProfiles.clear();
+    workouts.clear();
     for (final p in (root['people'] as List? ?? const [])) {
       people.add(Person.fromJson((p as Map).cast<String, dynamic>()));
     }
@@ -566,6 +682,36 @@ class Repository {
     final n = root['notes'];
     if (n is Map) {
       n.forEach((k, v) => notes[k.toString()] = v.toString());
+    }
+    // Блок тренера. Сначала сбрасываем всё к дефолтам (импорт = полная
+    // замена), потом — если блок есть — читаем из него.
+    _trainerTone = 'coach';
+    _remindersOn = false;
+    _remindersTime = '18:00';
+    _trainerOnboarded = false;
+    final t = root['trainer'];
+    if (t is Map) {
+      _trainerTone = t['tone'] as String? ?? 'coach';
+      final r = t['reminders'];
+      if (r is Map) {
+        _remindersOn = r['on'] as bool? ?? false;
+        _remindersTime = r['time'] as String? ?? '18:00';
+      }
+      _trainerOnboarded = t['onboarded'] as bool? ?? false;
+      final tp = t['people'];
+      if (tp is Map) {
+        tp.forEach((k, v) {
+          trainerProfiles[k.toString()] =
+              TrainerProfile.fromJson((v as Map).cast<String, dynamic>());
+        });
+      }
+      final tw = t['workouts'];
+      if (tw is Map) {
+        tw.forEach((k, v) {
+          workouts[k.toString()] =
+              WorkoutTime.fromJson((v as Map).cast<String, dynamic>());
+        });
+      }
     }
   }
 }

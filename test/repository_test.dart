@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workoutlog/catalog.dart';
 import 'package:workoutlog/data.dart';
+import 'package:workoutlog/trainer_data.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -327,5 +328,132 @@ void main() {
     repo.exercises.clear();
     expect(repo.importJson(dump), isTrue);
     expect(repo.exercises.single.techId, 'squat');
+  });
+
+  // ---------- Тренер: данные ----------
+
+  test('тренер: по умолчанию тон «тренер», напоминания выключены, онбординг не пройден', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    expect(repo.trainerTone, 'coach');
+    expect(repo.remindersOn, isFalse);
+    expect(repo.remindersTime, '18:00');
+    expect(repo.trainerOnboarded, isFalse);
+  });
+
+  test('тренер: настройки сохраняются', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    await repo.setTrainerTone('buddy');
+    await repo.setReminders(true, time: '07:30');
+    repo.setTrainerOnboarded();
+    expect(repo.trainerTone, 'buddy');
+    expect(repo.remindersOn, isTrue);
+    expect(repo.remindersTime, '07:30');
+    expect(repo.trainerOnboarded, isTrue);
+  });
+
+  test('тренер: анкета сохраняется и переживает экспорт/импорт', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final p = repo.addPerson('Паша');
+
+    final profile = TrainerProfile(
+      age: 30,
+      height: 178,
+      weight: 80,
+      exp: 'regular',
+      goal: 'strength',
+      days: 3,
+      limits: {'knee'},
+      program: 'strong_5x5',
+      startDate: '2026-10-14',
+      weekdays: {1, 3, 5},
+      startWeights: {'squat': 40, 'bench': 30},
+      fails: {'squat': 1},
+    );
+    repo.setTrainerProfile(p.id, profile);
+
+    expect(repo.trainerProfile(p.id)!.program, 'strong_5x5');
+    expect(repo.trainerProfile(p.id)!.limits, contains('knee'));
+    expect(repo.trainerProfile('нет-такого'), isNull);
+
+    final dump = repo.exportJson();
+    expect(dump, contains('"trainer"'));
+    expect(dump, contains('strong_5x5'));
+    repo.trainerProfiles.clear();
+    expect(repo.importJson(dump), isTrue);
+    final loaded = repo.trainerProfile(p.id)!;
+    expect(loaded.age, 30);
+    expect(loaded.weight, 80);
+    expect(loaded.weekdays, {1, 3, 5});
+    expect(loaded.startWeights['squat'], 40);
+    expect(loaded.fails['squat'], 1);
+  });
+
+  test('тренер: старый JSON без блока trainer грузится без ошибок', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final p = repo.addPerson('Паша');
+    final ex = repo.addExercise('Присед', {1});
+    repo.sessionForOrNew(DateTime(2026, 10, 9), ex.id, p.id)
+        .sets
+        .add(const SetEntry(100, 5));
+
+    // Старый формат: без блока trainer.
+    final oldJson =
+        '{"people":[],"exercises":[],"sessions":[],"notes":{},"videos":[]}';
+    expect(repo.importJson(oldJson), isTrue);
+    expect(repo.trainerProfiles, isEmpty);
+    expect(repo.trainerTone, 'coach');
+    expect(repo.workouts, isEmpty);
+  });
+
+  test('тренер: удаление участника удаляет и его анкету', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final p1 = repo.addPerson('Паша');
+    final p2 = repo.addPerson('Антон');
+    repo.setTrainerProfile(p1.id, TrainerProfile(age: 30, weight: 80));
+    repo.setTrainerProfile(p2.id, TrainerProfile(age: 25, weight: 70));
+
+    expect(repo.deletePerson(p2), isTrue);
+    expect(repo.trainerProfile(p1.id), isNotNull);
+    expect(repo.trainerProfile(p2.id), isNull);
+  });
+
+  test('тренер: тренировка дня — начало, конец, продолжение', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final day = DateTime(2026, 10, 14);
+
+    expect(repo.workoutOn(day), isNull);
+    final w = repo.startWorkout(day);
+    expect(w.running, isTrue);
+    expect(repo.workoutOn(day), isNotNull);
+
+    repo.endWorkout(day);
+    expect(repo.workoutOn(day)!.running, isFalse);
+
+    // Продолжение: конец снимается, старт остаётся прежним.
+    final resumed = repo.startWorkout(day);
+    expect(resumed.running, isTrue);
+    expect(resumed.start, w.start);
+
+    repo.removeWorkout(day);
+    expect(repo.workoutOn(day), isNull);
+  });
+
+  test('лимит участников — 4', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    expect(repo.canAddPerson, isTrue);
+    repo.addPerson('1');
+    repo.addPerson('2');
+    repo.addPerson('3');
+    expect(repo.canAddPerson, isTrue);
+    repo.addPerson('4');
+    expect(repo.canAddPerson, isFalse);
+    expect(Repository.maxPeople, 4);
   });
 }
