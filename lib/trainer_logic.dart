@@ -326,3 +326,54 @@ bool cycleEnded({
   required int cycleWeeks,
 }) =>
     weeksSinceStart(startDate: startDate, today: today) > cycleWeeks;
+
+/// Сдвинуть дату старта на N недель вперёд («Продолжить»/«Повторить цикл»:
+/// нумерация недель начинается заново, веса не трогаем).
+String shiftStartDate(String startDate, int weeks) {
+  final parts = startDate.split('-');
+  final d = DateTime(
+          int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]))
+      .add(Duration(days: weeks * 7));
+  final mm = d.month.toString().padLeft(2, '0');
+  final dd = d.day.toString().padLeft(2, '0');
+  return '${d.year}-$mm-$dd';
+}
+
+/// Итоги цикла для отчёта (§8): сколько тренировок сделано из запланированных
+/// и новые рекорды (вес в цикле выше лучшего веса до цикла).
+class CycleReport {
+  /// Сколько тренировок запланировано: дни недели × недели цикла.
+  final int planned;
+
+  /// Сколько фактически записано (уникальные даты с подходами).
+  final int done;
+
+  /// Строки-рекорды: 'Жим лёжа: 70 → 75 кг'.
+  final List<String> records;
+
+  const CycleReport({
+    required this.planned,
+    required this.done,
+    required this.records,
+  });
+}
+
+/// Строки рекордов: [bestDuring] — лучший вес за цикл по технике,
+/// [bestBefore] — лучший вес до цикла. Рекордом считаем только РОСТ:
+/// вес без прежних записей — это не рекорд, а просто старт.
+List<String> recordLines({
+  required Map<String, double> bestBefore,
+  required Map<String, double> bestDuring,
+  required String Function(String techId) nameOf,
+}) {
+  final lines = <String>[];
+  final keys = bestDuring.keys.toList()..sort();
+  for (final techId in keys) {
+    final during = bestDuring[techId]!;
+    final before = bestBefore[techId];
+    if (before == null || before <= 0 || during <= before) continue;
+    lines.add('${nameOf(techId)}: '
+        '${before.toStringAsFixed(0)} → ${during.toStringAsFixed(0)} кг');
+  }
+  return lines;
+}

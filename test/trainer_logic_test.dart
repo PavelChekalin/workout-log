@@ -370,6 +370,24 @@ void main() {
     expect(weeksSinceStart(startDate: start, today: DateTime(2026, 10, 14)), 1);
   });
 
+  test('отчёт: сдвиг даты старта на N недель (продолжение цикла)', () {
+    expect(shiftStartDate('2026-10-14', 4), '2026-11-11');
+    expect(shiftStartDate('2026-10-14', 6), '2026-11-25');
+    expect(shiftStartDate('2026-12-28', 4), '2027-01-25'); // через год
+  });
+
+  test('отчёт: строки рекордов — только рост, старт не рекорд', () {
+    String nameOf(String id) => id == 'bench' ? 'Жим лёжа' : id;
+    final lines = recordLines(
+      bestBefore: {'bench': 70, 'squat': 100},
+      bestDuring: {'bench': 75, 'squat': 100, 'row_barbell': 60},
+      nameOf: nameOf,
+    );
+    // Жим вырос — в отчёт. Присед не тронут — мимо. Тяга без прежних
+    // записей — просто старт, не рекорд.
+    expect(lines, ['Жим лёжа: 70 → 75 кг']);
+  });
+
   // ---------- Фразы тренера ----------
 
   test('фразы: у каждого события есть варианты для всех трёх тонов', () {

@@ -360,7 +360,7 @@ class _TrainerScreenState extends State<TrainerScreen> {
             ],
             if (ended) ...[
               const SizedBox(height: 8),
-              _cycleEndedNote(program),
+              _cycleReportCard(p, profile, program),
             ],
             const Divider(height: 24),
             ...planDay.exercises.map((e) => _planRow(p, profile, program, e)),
@@ -396,7 +396,13 @@ class _TrainerScreenState extends State<TrainerScreen> {
             ?.copyWith(fontStyle: FontStyle.italic));
   }
 
-  Widget _cycleEndedNote(Program program) {
+  /// Карточка конца цикла: статистика + рекорды + «что дальше?» (§8).
+  Widget _cycleReportCard(Person p, TrainerProfile profile, Program program) {
+    final report = buildCycleReport(
+        repo: repo,
+        personId: p.id,
+        program: program,
+        profile: profile);
     final line = _lineOnce(CoachEvent.cycleEnd);
     return Container(
       width: double.infinity,
@@ -408,22 +414,83 @@ class _TrainerScreenState extends State<TrainerScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Цикл закончился (${program.cycleWeeks} нед.). Можно повторить '
-            'программу или взять другую — кнопка «Сменить программу» ниже.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text('Цикл закончился (${program.cycleWeeks} нед.)',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold)),
           if (line != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(line,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
                     ?.copyWith(fontStyle: FontStyle.italic)),
           ],
+          const SizedBox(height: 6),
+          Text('Тренировок выполнено: ${report.done} из ${report.planned}'),
+          if (report.records.isEmpty)
+            const Text('Новых рекордов за цикл не было — но веса держим.')
+          else ...[
+            const SizedBox(height: 4),
+            Text('Новые рекорды:',
+                style: Theme.of(context).textTheme.bodySmall),
+            ...report.records.map((r) => Text('• $r',
+                style: Theme.of(context).textTheme.bodySmall)),
+          ],
+          const SizedBox(height: 8),
+          Text('Что дальше?',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              FilledButton.tonal(
+                onPressed: () {
+                  profile.startDate = shiftStartDate(
+                      profile.startDate!, program.cycleWeeks);
+                  repo.setTrainerProfile(p.id, profile);
+                  setState(() {});
+                  _snack('Продолжаем: недели пошли заново, веса растут дальше');
+                },
+                child: const Text('Продолжить'),
+              ),
+              FilledButton.tonal(
+                onPressed: () {
+                  profile.startDate = shiftStartDate(
+                      profile.startDate!, program.cycleWeeks);
+                  profile.fails.clear();
+                  repo.setTrainerProfile(p.id, profile);
+                  setState(() {});
+                  _snack('Цикл повторён: счётчики неудач обнулены');
+                },
+                child: const Text('Повторить цикл'),
+              ),
+              OutlinedButton(
+                onPressed: () {
+                  // Прошёл полный цикл — опыт уже «регулярно»: рекомендация
+                  // в каталоге может измениться (§8).
+                  profile.exp = 'regular';
+                  repo.setTrainerProfile(p.id, profile);
+                  _openSetup(program);
+                },
+                child: const Text('Новая программа'),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(text)));
   }
 
   Widget _planRow(

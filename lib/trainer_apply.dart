@@ -142,3 +142,48 @@ double current1RM({
   };
   return beginner1RM[techId] ?? 40;
 }
+
+/// Итоги цикла участника из журнала (§8): выполненные тренировки и рекорды.
+CycleReport buildCycleReport({
+  required Repository repo,
+  required String personId,
+  required Program program,
+  required TrainerProfile profile,
+}) {
+  final startDate = profile.startDate ?? '';
+  final techs = programTechIds(program);
+  final techByExercise = <String, String?>{
+    for (final e in repo.exercises) e.id: e.techId,
+  };
+
+  final dates = <String>{};
+  final bestBefore = <String, double>{};
+  final bestDuring = <String, double>{};
+
+  for (final s in repo.sessions) {
+    if (s.personId != personId || s.sets.isEmpty) continue;
+    final tech = techByExercise[s.exerciseId];
+    if (tech == null || !techs.contains(tech)) continue;
+    var weight = 0.0;
+    for (final set in s.sets) {
+      final w = set.weight ?? 0;
+      if (w > weight) weight = w.toDouble();
+    }
+    if (startDate.isNotEmpty && s.date.compareTo(startDate) >= 0) {
+      dates.add(s.date);
+      if (weight > (bestDuring[tech] ?? 0)) bestDuring[tech] = weight;
+    } else if (weight > (bestBefore[tech] ?? 0)) {
+      bestBefore[tech] = weight;
+    }
+  }
+
+  return CycleReport(
+    planned: profile.weekdays.length * program.cycleWeeks,
+    done: dates.length,
+    records: recordLines(
+      bestBefore: bestBefore,
+      bestDuring: bestDuring,
+      nameOf: (id) => techById(id)?.name ?? id,
+    ),
+  );
+}

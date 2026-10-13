@@ -217,4 +217,48 @@ void main() {
         current1RM(repo: repo, personId: p.id, techId: 'bench'),
         closeTo(70, 0.01));
   });
+
+  // ---------- Отчёт по циклу ----------
+
+  test('отчёт по циклу: выполнено из запланированных + рекорды журнала', () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final p = repo.addPerson('Паша');
+    final bench = repo.addExercise('Жим лёжа', {1}, techId: 'bench');
+    final squat = repo.addExercise('Приседания', {5}, techId: 'squat');
+
+    // До цикла: жим 70 (лучший до).
+    repo.sessionForOrNew(DateTime(2026, 10, 7), bench.id, p.id)
+        .sets
+        .add(const SetEntry(70, 5));
+
+    // Цикл с 14.10: три тренировки, жим вырос до 75, присед без роста.
+    for (final day in [14, 16, 19]) {
+      repo.sessionForOrNew(DateTime(2026, 10, day), bench.id, p.id)
+          .sets
+          .add(SetEntry(day == 19 ? 75 : 70, 5));
+      repo.sessionForOrNew(DateTime(2026, 10, day), squat.id, p.id)
+          .sets
+          .add(const SetEntry(90, 5));
+    }
+
+    final profile = TrainerProfile(
+        program: 'cbl',
+        startDate: '2026-10-14',
+        weekdays: {1, 3, 5});
+    repo.setTrainerProfile(p.id, profile);
+
+    final report = buildCycleReport(
+        repo: repo,
+        personId: p.id,
+        program: programById('cbl')!,
+        profile: profile);
+
+    // 3 дня в неделю × 6 недель = 18 запланировано, сделано 3.
+    expect(report.planned, 18);
+    expect(report.done, 3);
+    // Жим 70 → 75 — рекорд; присед одинаковый — не показываем.
+    expect(report.records, contains('Жим лёжа: 70 → 75 кг'));
+    expect(report.records.any((r) => r.contains('Присед')), isFalse);
+  });
 }
