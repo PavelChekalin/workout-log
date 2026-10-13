@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import 'catalog.dart';
+import 'coach_lines.dart';
 import 'data.dart';
 import 'programs.dart';
 import 'trainer_apply.dart';
@@ -43,6 +44,29 @@ class TrainerScreen extends StatefulWidget {
 class _TrainerScreenState extends State<TrainerScreen> {
   final repo = Repository.instance;
   String? personId;
+
+  /// Гард «не заиграться»: фраза по событию — один раз на время экрана.
+  final Set<String> _shownLines = <String>{};
+
+  String? _lineOnce(String event, {String? tone}) {
+    if (!_shownLines.add(event)) return null;
+    return coachLine(tone ?? repo.trainerTone, event);
+  }
+
+  /// Дней с последней записанной тренировки участника (999 — записей нет).
+  int _daysSinceLastSession(Person p) {
+    String? last;
+    for (final s in repo.sessions) {
+      if (s.personId == p.id && s.sets.isNotEmpty) {
+        if (last == null || s.date.compareTo(last) > 0) last = s.date;
+      }
+    }
+    if (last == null) return 999;
+    final parts = last.split('-');
+    final d = DateTime(
+        int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    return DateTime.now().difference(d).inDays;
+  }
 
   @override
   void initState() {
@@ -326,6 +350,14 @@ class _TrainerScreenState extends State<TrainerScreen> {
                       '${planDay.title}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            if (_daysSinceLastSession(p) >= 7) ...[
+              const SizedBox(height: 4),
+              _coachLineText(_lineOnce(CoachEvent.skipWeek)),
+            ],
+            if (trainingToday) ...[
+              const SizedBox(height: 4),
+              _coachLineText(_lineOnce(CoachEvent.planToday)),
+            ],
             if (ended) ...[
               const SizedBox(height: 8),
               _cycleEndedNote(program),
@@ -354,7 +386,18 @@ class _TrainerScreenState extends State<TrainerScreen> {
     );
   }
 
+  /// Курсивная строчка фразы тренера (или пустота).
+  Widget _coachLineText(String? line) {
+    if (line == null || line.isEmpty) return const SizedBox.shrink();
+    return Text(line,
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(fontStyle: FontStyle.italic));
+  }
+
   Widget _cycleEndedNote(Program program) {
+    final line = _lineOnce(CoachEvent.cycleEnd);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -362,11 +405,23 @@ class _TrainerScreenState extends State<TrainerScreen> {
         color: Theme.of(context).colorScheme.tertiaryContainer,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        'Цикл закончился (${program.cycleWeeks} нед.). Можно повторить '
-        'программу или взять другую — кнопка «Сменить программу» ниже. '
-        'Отчёт по циклу появится в следующей версии.',
-        style: Theme.of(context).textTheme.bodySmall,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Цикл закончился (${program.cycleWeeks} нед.). Можно повторить '
+            'программу или взять другую — кнопка «Сменить программу» ниже.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (line != null) ...[
+            const SizedBox(height: 4),
+            Text(line,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontStyle: FontStyle.italic)),
+          ],
+        ],
       ),
     );
   }
@@ -478,7 +533,10 @@ class _TrainerScreenState extends State<TrainerScreen> {
     return showDialog<String>(
       context: context,
       builder: (_) => _SummaryDialog(
-          person: p, profile: profile, planDay: planDay),
+          person: p,
+          profile: profile,
+          planDay: planDay,
+          tone: repo.trainerTone),
     );
   }
 }
@@ -963,11 +1021,13 @@ class _SummaryDialog extends StatefulWidget {
   final Person person;
   final TrainerProfile profile;
   final ProgramDay planDay;
+  final String tone;
 
   const _SummaryDialog({
     required this.person,
     required this.profile,
     required this.planDay,
+    required this.tone,
   });
 
   @override
@@ -979,6 +1039,15 @@ class _SummaryDialogState extends State<_SummaryDialog> {
 
   /// Выбор по каждому техId: 'easy' | 'hard' | 'failed'.
   late final Map<String, String> results = {};
+
+  /// Дефолт по записи в журнале: записано — «тяжело» (держим вес),
+  /// не записано — «не вышло».
+  String _defaultResult(PlanExercise e) {
+    final ex = exerciseByTech(repo, e.techId);
+    final s =
+        ex == null ? null : repo.sessionFor(DateTime.now(), ex.id, widget.person.id);
+    return (s != null && s.sets.isNotEmpty) ? 'hard' : 'failed';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1025,8 +1094,7 @@ class _SummaryDialogState extends State<_SummaryDialog> {
         personId: widget.person.id,
         profile: widget.profile,
         techId: e.techId);
-    final done = results[e.techId] ??
-        (current == null ? 'easy' : 'hard'); // по умолчанию — держим вес
+    final done = results[e.techId] ?? _defaultResult(e);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -1053,6 +1121,7 @@ class _SummaryDialogState extends State<_SummaryDialog> {
   String _apply() {
     final changes = <String>[];
     final fails = widget.profile.fails;
+    var anyProgress = false;
     for (final e in widget.planDay.exercises) {
       final program = programById(widget.profile.program);
       if (program != null && program.mainLifts.contains(e.techId)) continue;
@@ -1061,13 +1130,13 @@ class _SummaryDialogState extends State<_SummaryDialog> {
           personId: widget.person.id,
           profile: widget.profile,
           techId: e.techId);
-      final r = results[e.techId] ??
-          (current == null ? 'easy' : 'hard');
+      final r = results[e.techId] ?? _defaultResult(e);
       final result = switch (r) {
         'easy' => WorkoutResult.easy,
         'hard' => WorkoutResult.hard,
         _ => WorkoutResult.failed,
       };
+      if (result != WorkoutResult.failed) anyProgress = true;
       final next = nextWeight(
           techId: e.techId, current: current, result: result, fails: fails);
       final name = techById(e.techId)?.name ?? e.techId;
@@ -1077,9 +1146,14 @@ class _SummaryDialogState extends State<_SummaryDialog> {
       }
     }
     repo.setTrainerProfile(widget.person.id, widget.profile);
+    final phrase = coachLine(
+        widget.tone,
+        anyProgress ? CoachEvent.planDone : CoachEvent.planPartial);
     if (changes.isEmpty) {
-      return 'Готово. Веса держим как есть.';
+      return 'Готово. Веса держим как есть.'
+          '${phrase == null ? '' : '\n$phrase'}';
     }
-    return 'Готово! Следующие веса: ${changes.join('; ')}';
+    return 'Готово! Следующие веса: ${changes.join('; ')}'
+        '${phrase == null ? '' : '\n$phrase'}';
   }
 }

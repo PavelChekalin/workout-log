@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:workoutlog/catalog.dart';
+import 'package:workoutlog/coach_lines.dart';
 import 'package:workoutlog/programs.dart';
 import 'package:workoutlog/trainer_logic.dart';
 
@@ -365,5 +368,28 @@ void main() {
             startDate: start, today: DateTime(2026, 11, 11), cycleWeeks: 4),
         isTrue);
     expect(weeksSinceStart(startDate: start, today: DateTime(2026, 10, 14)), 1);
+  });
+
+  // ---------- Фразы тренера ----------
+
+  test('фразы: у каждого события есть варианты для всех трёх тонов', () {
+    for (final event in kCoachLines.values) {
+      expect(event.keys,
+          containsAll([CoachTone.robot, CoachTone.coach, CoachTone.buddy]));
+      for (final lines in event.values) {
+        expect(lines.length, greaterThanOrEqualTo(3));
+        expect(lines.every((l) => l.trim().isNotEmpty), isTrue);
+      }
+    }
+  });
+
+  test('фразы: выбор по тону, неизвестный тон падает на «Тренера»', () {
+    final line = coachLine(CoachTone.robot, CoachEvent.start, random: Random(1));
+    expect(line, isNotNull);
+    // Фраза из словаря именно робота.
+    expect(kCoachLines[CoachEvent.start]![CoachTone.robot], contains(line));
+    expect(coachLine('нет-такого', CoachEvent.start), isNotNull);
+    // Для неизвестного события — null, вызывающий код не показывает пустоту.
+    expect(coachLine(CoachTone.coach, 'нет-такого'), isNull);
   });
 }

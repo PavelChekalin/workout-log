@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'catalog.dart';
 import 'calendar_picker.dart';
+import 'coach_lines.dart';
 import 'data.dart';
 import 'kcal.dart';
 import 'programs.dart';
@@ -69,6 +70,16 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Кто выбран в панели тренировки (для плана и калорий).
   String? _panelPersonId;
+
+  /// Показанные фразы тренера (гард «не заиграться»: одно событие — одна фраза
+  /// на время жизни экрана).
+  final Set<String> _shownCoachLines = <String>{};
+
+  /// Фраза по событию, но не чаще раза (пока открыт экран).
+  String? _coachLineOnce(String event) {
+    if (!_shownCoachLines.add(event)) return null;
+    return coachLine(repo.trainerTone, event);
+  }
 
   @override
   void initState() {
@@ -179,26 +190,19 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {});
   }
 
+  /// Фраза-напутствие: одна на тренировку (выбирается при старте).
+  String? _startLine;
+
   void _startWorkout() {
     repo.startWorkout(DateTime.now());
     _lastSetAt = null; // до первого подхода — пауза, так честнее
     _ensureWorkoutTicker();
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_startPhrase()), duration: const Duration(seconds: 2)));
-    setState(() {});
-  }
-
-  /// Напутствие на старте. Пока короткое — полный набор фраз по тонам
-  /// приходит на этапе 5.
-  String _startPhrase() {
-    switch (repo.trainerTone) {
-      case 'robot':
-        return 'Тренировка запущена. Таймер идёт.';
-      case 'buddy':
-        return 'Ну что, погнали! Размялся — в бой.';
-      default:
-        return 'Отлично, поехали! Дыши ровно и держи спину.';
+    _startLine = coachLine(repo.trainerTone, CoachEvent.start);
+    if (_startLine != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_startLine!), duration: const Duration(seconds: 2)));
     }
+    setState(() {});
   }
 
   /// Завершение: переспросить, показать итог.
@@ -239,11 +243,56 @@ class _MainScreenState extends State<MainScreen> {
     _workoutTicker = null;
     if (mounted) setState(() {});
     if (!mounted) return;
+    // Фраза по итогу: весь план дня записан — «план выполнен», иначе «частично».
+    String? endLine;
+    for (final p in repo.people) {
+      final planDay = _todayPlanDayFor(p);
+      if (planDay == null) continue;
+      var allDone = true;
+      for (final e in planDay.exercises) {
+        final ex = exerciseByTech(repo, e.techId);
+        final s =
+            ex == null ? null : repo.sessionFor(DateTime.now(), ex.id, p.id);
+        if (s == null || s.sets.isEmpty) {
+          allDone = false;
+          break;
+        }
+      }
+      endLine = coachLine(
+          repo.trainerTone,
+          allDone ? CoachEvent.planDone : CoachEvent.planPartial);
+      break;
+    }
     await showDialog<void>(
       context: context,
       builder: (_) => _WorkoutSummaryDialog(
-          elapsedSec: elapsed, kcalByPerson: kcalByPerson),
+          elapsedSec: elapsed,
+          kcalByPerson: kcalByPerson,
+          line: endLine),
     );
+  }
+
+  /// План дня участника (null — анкеты или программы нет).
+  ProgramDay? _todayPlanDayFor(Person p) {
+    final profile = repo.trainerProfile(p.id);
+    final program = profile == null ? null : programById(profile.program);
+    if (profile == null ||
+        program == null ||
+        profile.startDate == null ||
+        profile.weekdays.isEmpty) {
+      return null;
+    }
+    final sessionDates = repo.sessions
+        .where((s) => s.personId == p.id && s.sets.isNotEmpty)
+        .map((s) => s.date)
+        .toSet();
+    final doneCount = completedSessionsSince(
+        startDate: profile.startDate!, recordedDates: sessionDates);
+    return todayPlanDay(
+        program: program,
+        weekdays: profile.weekdays,
+        today: DateTime.now(),
+        completedSessions: doneCount);
   }
 
   /// Строка плана для панели: следующее упражнение или итог дня.
@@ -441,7 +490,7 @@ class _MainScreenState extends State<MainScreen> {
           ? 'Веди журнал как обычно.'
           : _planTextFor(selected),
       setsCount: selected == null ? 0 : _setsTodayFor(selected),
-      trainerLine: _startPhrase(),
+      trainerLine: _startLine ?? '',
       onEnd: _endWorkoutDialog,
     );
   }
@@ -1003,6 +1052,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _openSets(Exercise exercise, Person person) async {
+    final recordBefore = repo.personalRecord(exercise.id, person.id);
     await showDialog<void>(
       context: context,
       builder: (_) => _SetsDialog(
@@ -1016,6 +1066,20 @@ class _MainScreenState extends State<MainScreen> {
         },
       ),
     );
+    // Новый рекорд? Сравним лучший вес до и после записи.
+    final recordAfter = repo.personalRecord(exercise.id, person.id);
+    final beat = recordAfter != null &&
+        recordAfter.weight != null &&
+        (recordBefore == null ||
+            recordBefore.weight == null ||
+            recordAfter.weight! > recordBefore.weight!);
+    if (beat) {
+      final line = _coachLineOnce(CoachEvent.record);
+      if (line != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$line (${fmtKg(recordAfter.weight!)} кг)')));
+      }
+    }
     setState(() {});
   }
 
@@ -1606,10 +1670,12 @@ class _TechPickerState extends State<_TechPicker> {
 class _WorkoutSummaryDialog extends StatelessWidget {
   final int elapsedSec;
   final Map<Person, double?> kcalByPerson;
+  final String? line;
 
   const _WorkoutSummaryDialog({
     required this.elapsedSec,
     required this.kcalByPerson,
+    this.line,
   });
 
   @override
@@ -1631,6 +1697,14 @@ class _WorkoutSummaryDialog extends StatelessWidget {
           else
             ...known.map((e) => Text(
                 '${e.key.name}: ≈ ${e.value!.round()} ккал (грубая оценка)')),
+          if (line != null) ...[
+            const SizedBox(height: 8),
+            Text(line!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontStyle: FontStyle.italic)),
+          ],
           const SizedBox(height: 8),
           Text(
             'Отметить, как прошло и какие веса взять дальше — '

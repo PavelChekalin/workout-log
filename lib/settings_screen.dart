@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'data.dart';
+import 'coach_lines.dart';
+import 'trainer_screen.dart';
 import 'ui.dart';
 
 /// Настройки: тема оформления, участники и резервная копия данных.
@@ -168,6 +170,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+          const _SectionTitle('Тренер'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const ListTile(
+                  title: Text('Как тренер говорит'),
+                  subtitle: Text(
+                      'Уровень человечности реплик. Фразы показываются '
+                      'редко — один раз на событие.'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Wrap(
+                    spacing: 6,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Робот'),
+                        selected: repo.trainerTone == CoachTone.robot,
+                        onSelected: (_) {
+                          repo.setTrainerTone(CoachTone.robot);
+                          setState(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Тренер'),
+                        selected: repo.trainerTone == CoachTone.coach,
+                        onSelected: (_) {
+                          repo.setTrainerTone(CoachTone.coach);
+                          setState(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Приятель'),
+                        selected: repo.trainerTone == CoachTone.buddy,
+                        onSelected: (_) {
+                          repo.setTrainerTone(CoachTone.buddy);
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TrainerScreen())),
+                        icon: const Icon(Icons.fitness_center),
+                        label: const Text('Анкета и программа'),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(
+                    'Напоминания о тренировках появятся в следующей версии.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const _SectionTitle('Участники'),
