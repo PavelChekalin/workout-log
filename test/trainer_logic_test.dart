@@ -226,6 +226,104 @@ void main() {
     expect(w1[2] % 2.5, 0);
   });
 
+  // ---------- Сегодняшний день программы ----------
+
+  test('сегодня: сплит определяется днём недели', () {
+    final cbl = programById('cbl')!; // Грудь/Спина/Ноги
+    final days = {1, 3, 5};
+    // Пн → Грудь, Ср → Спина, Пт → Ноги.
+    expect(
+        todayPlanDay(
+                program: cbl,
+                weekdays: days,
+                today: DateTime(2026, 10, 12), // понедельник
+                completedSessions: 0)
+            .title,
+        'Грудь');
+    expect(
+        todayPlanDay(
+                program: cbl,
+                weekdays: days,
+                today: DateTime(2026, 10, 14), // среда
+                completedSessions: 0)
+            .title,
+        'Спина');
+    expect(
+        todayPlanDay(
+                program: cbl,
+                weekdays: days,
+                today: DateTime(2026, 10, 16), // пятница
+                completedSessions: 0)
+            .title,
+        'Ноги');
+    // Выходной (суббота) — план недели не ломается, берём первый.
+    expect(
+        todayPlanDay(
+                program: cbl,
+                weekdays: days,
+                today: DateTime(2026, 10, 17),
+                completedSessions: 0)
+            .title,
+        'Грудь');
+  });
+
+  test('сегодня: A/B чередуется по числу сделанных тренировок', () {
+    final p = programById('strong_5x5')!;
+    final days = {1, 3, 5};
+    final mon = DateTime(2026, 10, 12);
+    expect(
+        todayPlanDay(
+                program: p,
+                weekdays: days,
+                today: mon,
+                completedSessions: 0)
+            .title,
+        'День A');
+    expect(
+        todayPlanDay(
+                program: p,
+                weekdays: days,
+                today: mon,
+                completedSessions: 1)
+            .title,
+        'День B');
+    expect(
+        todayPlanDay(
+                program: p,
+                weekdays: days,
+                today: mon,
+                completedSessions: 2)
+            .title,
+        'День A');
+  });
+
+  test('сегодня: однодневная программа (круговая) не чередуется', () {
+    final p = programById('circuit')!;
+    final days = {1, 3, 5};
+    final mon = DateTime(2026, 10, 12);
+    expect(
+        todayPlanDay(
+                program: p,
+                weekdays: days,
+                today: mon,
+                completedSessions: 5)
+            .title,
+        'Круг');
+  });
+
+  test('выполненных тренировок: считаются даты с подходами после старта', () {
+    final n = completedSessionsSince(
+      startDate: '2026-10-14',
+      recordedDates: {
+        '2026-10-10', // до старта — не считается
+        '2026-10-14',
+        '2026-10-16',
+        '2026-10-19',
+      },
+    );
+    expect(n, 3);
+  });
+
   // ---------- Недели цикла ----------
 
   test('цикл: номер недели считается от даты старта', () {

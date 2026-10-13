@@ -8,6 +8,7 @@ import 'calendar_picker.dart';
 import 'data.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
+import 'trainer_screen.dart';
 import 'ui.dart';
 import 'video_bridge.dart';
 
@@ -128,6 +129,15 @@ class _MainScreenState extends State<MainScreen> {
         centerTitle: true,
         title: const Text('Журнал тренировок'),
         actions: [
+          IconButton(
+            tooltip: 'Тренер',
+            icon: const Icon(Icons.fitness_center),
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const TrainerScreen()));
+              _refresh();
+            },
+          ),
           IconButton(
             tooltip: 'Статистика',
             icon: const Icon(Icons.insights),

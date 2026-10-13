@@ -9,6 +9,112 @@
 import 'programs.dart';
 
 // ---------------------------------------------------------------------------
+// Какой день программы сегодня
+// ---------------------------------------------------------------------------
+
+/// Определить программу дня на сегодня.
+///
+/// Для программ с чередованием (A/B) день зависит от числа уже выполненных
+/// тренировок: сделал 0 — день A, сделал 1 — день B и т.д. Для сплитов
+/// (Грудь/Спина/Ноги) — по дню недели: какой training-день сегодня, тот и
+/// показываем.
+///
+/// [weekdays] — выбранные тренировочные дни (отсортированы), [today] —
+/// текущая дата, [completedSessions] — сколько тренировок уже сделано с
+/// старта программы.
+ProgramDay todayPlanDay({
+  required Program program,
+  required Set<int> weekdays,
+  required DateTime today,
+  required int completedSessions,
+}) {
+  final sorted = weekdays.toList()..sort();
+  if (program.rotateDays || program.days.length == 1 || sorted.isEmpty) {
+    // Чередование A/B — по счёту тренировок.
+    return program.days[completedSessions % program.days.length];
+  }
+  // Сплит — по дню недели.
+  final idx = sorted.indexOf(today.weekday);
+  if (idx < 0) return program.days.first; // сегодня не тренировочный день
+  return program.days[idx % program.days.length];
+}
+
+/// Сколько тренировок программы уже выполнено (по числу дат с подходами
+/// с даты старта). [recordedDates] — множество 'yyyy-MM-dd', где есть подходы.
+int completedSessionsSince({
+  required String startDate,
+  required Set<String> recordedDates,
+}) {
+  var n = 0;
+  for (final d in recordedDates) {
+    if (d.compareTo(startDate) >= 0) n++;
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// Привязка упражнений плана к дням недели (для создания в журнале)
+// ---------------------------------------------------------------------------
+
+/// Какие упражнения плана на каком дне недели — уже с учётом ограничений.
+///
+/// Сплиты (Грудь/Спина/Ноги) привязываются по порядку к выбранным дням:
+/// 3 дня {пн, ср, вс} → Грудь-пн, Спина-ср, Ноги-вс. Шесть дней у PPL
+/// ложатся по кругу: Push, Pull, Legs, Push, Pull, Legs.
+/// Программы с чередованием A/B и однодневные дают СВОД всех упражнений
+/// на каждый выбранный день: статично день недели не знает, какой по счёту
+/// будет тренировка — точный план на сегодня показывает экран «Тренер»
+/// (todayPlanDay).
+Map<int, List<PlanExercise>> planByWeekday({
+  required Program program,
+  required Set<int> weekdays,
+  required Set<String> limits,
+}) {
+  final sorted = weekdays.toList()..sort();
+  final result = <int, List<PlanExercise>>{};
+  if (sorted.isEmpty) return result;
+
+  List<PlanExercise> withLimits(List<PlanExercise> list) =>
+      list.map((e) => applyLimits(e, limits)).toList();
+
+  if (program.rotateDays || program.days.length == 1) {
+    // Свод всех упражнений всех дней программы (без дублей по технике).
+    final union = <PlanExercise>[];
+    for (final day in program.days) {
+      for (final e in day.exercises) {
+        if (!union.any((u) => u.techId == e.techId)) union.add(e);
+      }
+    }
+    final list = withLimits(union);
+    for (final wd in sorted) {
+      result[wd] = list;
+    }
+  } else {
+    for (var i = 0; i < sorted.length; i++) {
+      result[sorted[i]] = withLimits(
+          program.days[i % program.days.length].exercises);
+    }
+  }
+  return result;
+}
+
+/// Уникальные techId, которые нужно создать/подхватить в журнале.
+Set<String> neededTechIds({
+  required Program program,
+  required Set<int> weekdays,
+  required Set<String> limits,
+}) {
+  final s = <String>{};
+  for (final list in planByWeekday(
+      program: program, weekdays: weekdays, limits: limits).values) {
+    for (final e in list) {
+      s.add(e.techId);
+    }
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------------------
 // Подбор программы (таблица правил §4 спецификации)
 // ---------------------------------------------------------------------------
 
