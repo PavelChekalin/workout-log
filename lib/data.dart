@@ -215,6 +215,7 @@ class Repository {
   static const String _restEnabledKey = 'workout_rest_enabled';
   static const String _restSecondsKey = 'workout_rest_seconds';
   static const String _videoStorageKey = 'workout_video_storage';
+  static const String _healthProfileKey = 'workout_health_profile';
 
   /// 'system' | 'light' | 'dark'
   String _themeName = 'dark';
@@ -231,6 +232,12 @@ class Repository {
   /// Куда сохранять видео: 'gallery' (Галерея) | 'app' (память приложения).
   String _videoStorage = 'gallery';
   String get videoStorage => _videoStorage;
+
+  /// id участника, чьими данными Health Connect (шаги/пульс) мы считаем
+  /// своими. null — первый участник (владелец телефона по умолчанию,
+  /// решение Паши 14.10: выбор профиля в настройках).
+  String? _healthProfileId;
+  String? get healthProfileId => _healthProfileId;
 
   final List<Person> people = [];
   final List<Exercise> exercises = [];
@@ -283,6 +290,7 @@ class Repository {
     _restTimerEnabled = prefs.getBool(_restEnabledKey) ?? true;
     _restSeconds = prefs.getInt(_restSecondsKey) ?? 120;
     _videoStorage = prefs.getString(_videoStorageKey) ?? 'gallery';
+    _healthProfileId = prefs.getString(_healthProfileKey);
   }
 
   Future<void> setThemeName(String value) async {
@@ -307,6 +315,24 @@ class Repository {
     _videoStorage = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_videoStorageKey, value);
+  }
+
+  /// Профиль-владелец для данных часов: выбранный в настройках или первый.
+  Person? get healthProfile {
+    if (people.isEmpty) return null;
+    final id = _healthProfileId;
+    if (id != null) {
+      for (final p in people) {
+        if (p.id == id) return p;
+      }
+    }
+    return people.first;
+  }
+
+  Future<void> setHealthProfileId(String id) async {
+    _healthProfileId = id;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_healthProfileKey, id);
   }
 
   // ---------- Тренер: настройки ----------

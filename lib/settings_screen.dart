@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'data.dart';
 import 'coach_lines.dart';
+import 'health.dart';
 import 'reminders.dart';
 import 'trainer_screen.dart';
 import 'ui.dart';
@@ -19,6 +20,53 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final repo = Repository.instance;
+
+  /// Состояние Health Connect (шаги/пульс владельца).
+  TodayHealth _health = const TodayHealth();
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadHealth();
+  }
+
+  Future<void> _reloadHealth() async {
+    final h = await HealthBridge.load();
+    if (!mounted) return;
+    setState(() => _health = h);
+  }
+
+  Future<void> _requestHealth() async {
+    await HealthBridge.requestAccess();
+    await _reloadHealth();
+  }
+
+  /// Выбрать, чьи данные часов показывать (по умолчанию — первый участник).
+  Future<void> _pickHealthProfile() async {
+    if (repo.people.isEmpty) return;
+    final current = repo.healthProfile?.id;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Данные часов принадлежат'),
+        children: [
+          RadioGroup<String>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(context, v),
+            child: Column(
+              children: [
+                for (final p in repo.people)
+                  RadioListTile<String>(value: p.id, title: Text(p.name)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    await repo.setHealthProfileId(picked);
+    setState(() {});
+  }
 
   /// Пересчитать расписание напоминаний под текущие программы.
   Future<void> _rescheduleReminders() async {
@@ -151,6 +199,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ],
+              ],
+            ),
+          ),
+          const _SectionTitle('Данные с часов и браслетов'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Чьи данные показывать'),
+                  subtitle: Text(repo.healthProfile?.name ?? 'Нет участников'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _pickHealthProfile,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(
+                    !_health.sdkReady
+                        ? Icons.help_outline
+                        : _health.granted
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                  ),
+                  title: Text(!_health.sdkReady
+                      ? 'Health Connect не найден'
+                      : _health.granted
+                          ? 'Доступ выдан'
+                          : 'Доступ не выдан'),
+                  subtitle: Text(!_health.sdkReady
+                      ? 'Это приложение видит только встроенный в телефон '
+                          'Health Connect (Android 15+).'
+                      : _health.granted
+                          ? 'Шаги и пульс за сегодня появятся на экране '
+                              '«Сегодня» одной строкой сверху.'
+                          : 'Данные берутся из Health Connect — только с '
+                              'телефона владельца.'),
+                  trailing: _health.sdkReady
+                      ? _health.granted
+                          ? TextButton(
+                              onPressed: () async {
+                                await HealthBridge.revokeAccess();
+                                await _reloadHealth();
+                              },
+                              child: const Text('Забрать'),
+                            )
+                          : TextButton(
+                              onPressed: _requestHealth,
+                              child: const Text('Дать доступ'),
+                            )
+                      : TextButton(
+                          onPressed: HealthBridge.installHealthConnect,
+                          child: const Text('Установить'),
+                        ),
+                ),
               ],
             ),
           ),

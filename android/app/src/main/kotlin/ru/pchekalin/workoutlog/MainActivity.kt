@@ -22,12 +22,13 @@ import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity нужен health-плагину (запрос разрешений Health Connect).
+class MainActivity : FlutterFragmentActivity() {
     private val rcVideo = 7711
     private val rcStorage = 7712
     private val rcPick = 7713

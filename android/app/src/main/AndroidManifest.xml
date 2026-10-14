@@ -11,6 +11,12 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <!-- Часы и браслеты (Health Connect): читаем шаги и пульс за сегодня.
+         health.* — разрешения самого Health Connect; ACTIVITY_RECOGNITION
+         на Android 13+ нужен для шагов. -->
+    <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
     <application
         android:label="Журнал тренировок"
         android:name="${applicationName}"
@@ -59,6 +65,11 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Health Connect (на Android 15 встроен): чтобы приложение видело его. -->
+        <package android:name="com.google.android.healthconnect.controller"/>
+        <intent>
+            <action android:name="android.permission.health.READ_STEPS"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -7,6 +7,7 @@ import 'catalog.dart';
 import 'calendar_picker.dart';
 import 'coach_lines.dart';
 import 'data.dart';
+import 'health.dart';
 import 'kcal.dart';
 import 'onboarding_screen.dart';
 import 'programs.dart';
@@ -80,6 +81,9 @@ class _MainScreenState extends State<MainScreen> {
   /// Кто выбран в панели тренировки (для плана и калорий).
   String? _panelPersonId;
 
+  /// Шаги и пульс за сегодня (данные владельца, Health Connect).
+  TodayHealth _todayHealth = const TodayHealth();
+
   /// Показанные фразы тренера (гард «не заиграться»: одно событие — одна фраза
   /// на время жизни экрана).
   final Set<String> _shownCoachLines = <String>{};
@@ -94,6 +98,7 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _ensureWorkoutTicker();
+    _loadTodayHealth();
     // Первый запуск (в том числе после обновления приложения) — онбординг.
     if (!repo.trainerOnboarded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -112,6 +117,75 @@ class _MainScreenState extends State<MainScreen> {
   void _refresh() {
     if (!repo.restTimerEnabled && _restEndsAt != null) _stopRest();
     setState(() {});
+  }
+
+  /// Прочитать шаги/пульс за сегодня (вызывается при открытии экрана и
+  /// после настроек, где могут выдать доступ).
+  Future<void> _loadTodayHealth() async {
+    final h = await HealthBridge.load();
+    if (!mounted) return;
+    setState(() => _todayHealth = h);
+  }
+
+  Future<void> _requestHealthAccess() async {
+    final ok = await HealthBridge.requestAccess();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Нет доступа к данным Health Connect. Выдай его в '
+              'настройках приложения (раздел «Данные с часов и браслетов»).')));
+    }
+    await _loadTodayHealth();
+  }
+
+  /// Строка «шаги и пульс за сегодня» — одна строка сверху на экране
+  /// «Сегодня» (решение Паши 14.10: без дублей в карточках упражнений).
+  Widget _healthLine() {
+    final h = _todayHealth;
+    if (!h.sdkReady) return const SizedBox.shrink();
+    final owner = repo.healthProfile;
+    final String text;
+    if (!h.granted) {
+      text = 'Часы и браслеты: нет доступа к данным Health Connect';
+    } else {
+      final parts = <String>[
+        if (owner != null) owner.name,
+        if (h.pulseBpm != null) '♥ ${h.pulseBpm} уд/мин',
+        if (h.steps != null) '${h.steps} шагов',
+      ];
+      text = parts.isEmpty
+          ? 'Часы пока не прислали данные за сегодня'
+          : parts.join(' · ');
+    }
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: h.granted ? _loadTodayHealth : _requestHealthAccess,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 2),
+        child: Row(
+          children: [
+            Icon(
+                h.granted
+                    ? Icons.monitor_heart_outlined
+                    : Icons.watch_later_outlined,
+                size: 14,
+                color: cs.outline),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(fontSize: 12.5, color: cs.outline)),
+            ),
+            if (!h.granted)
+              Text('Дать доступ',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: cs.primary)),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -421,6 +495,7 @@ class _MainScreenState extends State<MainScreen> {
               await Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const SettingsScreen()));
               _refresh();
+              _loadTodayHealth();
             },
           ),
         ],
@@ -435,7 +510,10 @@ class _MainScreenState extends State<MainScreen> {
           Column(
             children: [
               _dateBar(),
-              if (_selectedDateIsToday) _workoutSection(),
+              if (_selectedDateIsToday) ...[
+                _healthLine(),
+                _workoutSection(),
+              ],
               _daySummary(),
               const Divider(height: 1),
               Expanded(
