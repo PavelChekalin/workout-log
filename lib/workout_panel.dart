@@ -73,8 +73,9 @@ class WorkoutPanel extends StatelessWidget {
             children: [
               const Icon(Icons.timer_outlined, size: 20),
               const SizedBox(width: 6),
-              // Фраза вместо цифр (правка Паши 14.10): «Вы занимаетесь …»;
-              // на паузе — по-другому (правка 14.10, №2: Пауза/Закончить).
+              // Фраза вместо цифр (правка Паши 14.10): «Вы занимаетесь …».
+              // Кнопки убраны в свою строку (правка 15.10): надпись занимает
+              // всю ширину и не рассыпается на куски.
               Expanded(
                 child: Text(
                     paused
@@ -83,7 +84,12 @@ class WorkoutPanel extends StatelessWidget {
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               OutlinedButton.icon(
                 onPressed: paused ? onResume : onPause,
                 icon:
