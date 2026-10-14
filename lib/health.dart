@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:health/health.dart';
 
 /// Шаги и пульс за сегодня из Health Connect (данные владельца телефона).
@@ -74,7 +75,22 @@ class HealthBridge {
   }
 
   /// Запросить доступ к шагам и пульсу. true — доступ выдан.
+  ///
+  /// Сначала пробуем СВОЁ окно Health Connect (классическое действие) —
+  /// на части прошивок (Realme) штатный запрос пакета health не доходит:
+  /// окно просто не открывается. Если своего окна нет — штатный путь.
   static Future<bool> requestAccess() async {
+    try {
+      const ch = MethodChannel('workout/health');
+      final native = await ch.invokeMethod<bool>('requestPermissions');
+      if (native == true) {
+        return await _health.hasPermissions(_types) ?? false;
+      }
+    } on MissingPluginException {
+      // Канала нет (тесты, другие платформы) — штатный путь ниже.
+    } on PlatformException {
+      // Не открылось — штатный путь ниже.
+    }
     try {
       return await _health.requestAuthorization(_types);
     } catch (_) {

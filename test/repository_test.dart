@@ -472,4 +472,79 @@ void main() {
     expect(repo.canAddPerson, isFalse);
     expect(Repository.maxPeople, 4);
   });
+
+  test('пауза и возобновление: отрезок уходит в done, время не теряется',
+      () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final day = DateTime(2026, 10, 14, 10, 0);
+
+    final w = repo.startWorkout(day);
+    expect(w.running, isTrue);
+    expect(w.paused, isFalse);
+    expect(w.lastAct, '10:00');
+
+    repo.pauseWorkout(day);
+    expect(w.running, isFalse); // на паузе — не «идёт»
+    expect(w.paused, isTrue);
+    expect(w.end, isNotNull);
+
+    final resumed = repo.startWorkout(day); // возобновить
+    expect(resumed.running, isTrue);
+    expect(resumed.paused, isFalse);
+    expect(resumed.done, hasLength(1)); // прежний отрезок в done
+
+    repo.endWorkout(day);
+    expect(w.running, isFalse);
+    expect(w.paused, isFalse); // закончена — «на паузе» не висит
+    expect(w.done, hasLength(1));
+  });
+
+  test('авто-закрытие: 2 часа без подходов — тренировка закрывается сама',
+      () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final start = DateTime(2026, 10, 14, 10, 0);
+    final w = repo.startWorkout(start);
+
+    expect(repo.closeIdleWorkouts(start.add(const Duration(hours: 1))),
+        isFalse);
+    expect(w.end, isNull);
+
+    // Записали подход — часы пошли заново.
+    repo.touchWorkout(start.add(const Duration(hours: 1, minutes: 30)));
+    expect(w.lastAct, '11:30');
+    expect(
+        repo.closeIdleWorkouts(start.add(const Duration(hours: 2))),
+        isFalse);
+
+    expect(
+        repo.closeIdleWorkouts(start.add(const Duration(hours: 3, minutes: 40))),
+        isTrue);
+    expect(w.end, '11:30'); // конец — по последней активности
+  });
+
+  test('авто-закрытие: вчерашняя «идущая» тренировка закрывается сразу',
+      () async {
+    final repo = Repository.instance;
+    await repo.init();
+    final yesterday = DateTime(2026, 10, 13, 18, 0);
+    final w = repo.startWorkout(yesterday);
+    expect(w.running, isTrue);
+
+    expect(repo.closeIdleWorkouts(DateTime(2026, 10, 14, 9, 0)), isTrue);
+    expect(w.end, '18:00');
+    // На паузе лежащие — не трогаем.
+    final pausedDay = DateTime(2026, 10, 12, 19, 0);
+    repo.startWorkout(pausedDay);
+    repo.pauseWorkout(pausedDay);
+    expect(repo.closeIdleWorkouts(DateTime(2026, 10, 14, 9, 0)), isFalse);
+  });
+
+  test('старые записи без paused читаются как законченные', () async {
+    final w = WorkoutTime.fromJson(const {'start': '18:32', 'end': '19:28'});
+    expect(w.paused, isFalse);
+    expect(w.lastAct, isNull);
+    expect(w.running, isFalse);
+  });
 }

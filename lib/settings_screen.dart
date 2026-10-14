@@ -236,7 +236,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ? 'Шаги и пульс за сегодня появятся на экране '
                               '«Сегодня» одной строкой сверху.'
                           : 'Данные берутся из Health Connect — только с '
-                              'телефона владельца.'),
+                              'телефона владельца. Жми «Дать доступ» — '
+                              'окно откроется само.'),
                   trailing: _health.sdkReady
                       ? _health.granted
                           ? TextButton(

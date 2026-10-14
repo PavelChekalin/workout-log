@@ -33,6 +33,10 @@ class MainActivity : FlutterFragmentActivity() {
     private val rcStorage = 7712
     private val rcPick = 7713
     private val rcMedia = 7714
+    private val rcHealthPerm = 7715
+
+    // Ожидание ответа окна разрешений Health Connect.
+    private var healthPermResult: MethodChannel.Result? = null
 
     // Состояние одной записи видео — живёт, пока открыта камера.
     private var videoResult: MethodChannel.Result? = null
@@ -65,6 +69,39 @@ class MainActivity : FlutterFragmentActivity() {
                         vibrateNow()
                         beepNow()
                         result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Запрос разрешений Health Connect СВОИМ окном (решение 14.10:
+        // на Realme штатный запрос пакета health шлёт новое действие
+        // androidx.health.*, которого контроллер прошивки не знает — окно
+        // не открывается). Классическое действие работает везде.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "workout/health")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestPermissions" -> {
+                        if (healthPermResult != null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val intent = Intent("android.health.connect.action.REQUEST_HEALTH_PERMISSIONS")
+                                .setPackage("com.google.android.healthconnect.controller")
+                                .putExtra(
+                                    "androidx.health.extra.PERMISSIONS_LIST",
+                                    arrayOf(
+                                        "android.permission.health.READ_STEPS",
+                                        "android.permission.health.READ_HEART_RATE"
+                                    )
+                                )
+                            healthPermResult = result
+                            startActivityForResult(intent, rcHealthPerm)
+                        } catch (e: Exception) {
+                            healthPermResult = null
+                            result.success(false)
+                        }
                     }
                     else -> result.notImplemented()
                 }
@@ -260,6 +297,14 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == rcHealthPerm) {
+            val res = healthPermResult
+            healthPermResult = null
+            // RESULT_OK — человек выдал доступ; при отмене/«назад» всё
+            // равно false — Dart перепроверит фактический доступ сам.
+            res?.success(resultCode == Activity.RESULT_OK)
+            return
+        }
         if (requestCode == rcPick) {
             val res = videoResult ?: return
             videoResult = null

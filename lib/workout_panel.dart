@@ -30,6 +30,11 @@ class WorkoutPanel extends StatelessWidget {
   final String trainerLine;
   final VoidCallback onEnd;
 
+  /// «На паузе» (решение Паши 14.10): кнопки Возобновить/Закончить.
+  final bool paused;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
+
   const WorkoutPanel({
     super.key,
     required this.elapsedSec,
@@ -43,6 +48,9 @@ class WorkoutPanel extends StatelessWidget {
     required this.setsCount,
     required this.trainerLine,
     required this.onEnd,
+    this.paused = false,
+    required this.onPause,
+    required this.onResume,
   });
 
   String get _timer => ruDurationWords(elapsedSec);
@@ -65,16 +73,28 @@ class WorkoutPanel extends StatelessWidget {
             children: [
               const Icon(Icons.timer_outlined, size: 20),
               const SizedBox(width: 6),
-              // Фраза вместо цифр (правка Паши 14.10): «Вы занимаетесь …».
+              // Фраза вместо цифр (правка Паши 14.10): «Вы занимаетесь …»;
+              // на паузе — по-другому (правка 14.10, №2: Пауза/Закончить).
               Expanded(
-                child: Text('Вы занимаетесь $_timer',
+                child: Text(
+                    paused
+                        ? 'Тренировка на паузе · всего $_timer'
+                        : 'Вы занимаетесь $_timer',
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 8),
-              OutlinedButton(
+              OutlinedButton.icon(
+                onPressed: paused ? onResume : onPause,
+                icon:
+                    Icon(paused ? Icons.play_arrow : Icons.pause, size: 18),
+                label: Text(paused ? 'Возобновить' : 'Пауза'),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.tonalIcon(
                 onPressed: onEnd,
-                child: const Text('Завершить'),
+                icon: const Icon(Icons.stop, size: 18),
+                label: const Text('Закончить'),
               ),
             ],
           ),

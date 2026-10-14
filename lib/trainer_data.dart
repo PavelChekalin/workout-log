@@ -120,6 +120,14 @@ class WorkoutTime {
   int restSec;
   int pauseSec;
 
+  /// «На паузе» (решение Паши 14.10): отрезок закончен, но тренировка
+  /// не закончена — можно возобновить. Старые записи без поля = false.
+  bool paused;
+
+  /// Последняя активность 'HH:mm' (старт, возобновление, подход) —
+  /// по ней авто-закрытие считает простой.
+  String? lastAct;
+
   WorkoutTime({
     required this.start,
     this.end,
@@ -127,6 +135,8 @@ class WorkoutTime {
     this.activeSec = 0,
     this.restSec = 0,
     this.pauseSec = 0,
+    this.paused = false,
+    this.lastAct,
   }) : done = done ?? <List<String>>[];
 
   bool get running => end == null;
@@ -140,6 +150,8 @@ class WorkoutTime {
         activeSec: (j['activeSec'] as num?)?.toInt() ?? 0,
         restSec: (j['restSec'] as num?)?.toInt() ?? 0,
         pauseSec: (j['pauseSec'] as num?)?.toInt() ?? 0,
+        paused: j['paused'] as bool? ?? false,
+        lastAct: j['lastAct'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -149,5 +161,7 @@ class WorkoutTime {
         if (activeSec > 0) 'activeSec': activeSec,
         if (restSec > 0) 'restSec': restSec,
         if (pauseSec > 0) 'pauseSec': pauseSec,
+        if (paused) 'paused': true,
+        if (lastAct != null) 'lastAct': lastAct,
       };
 }

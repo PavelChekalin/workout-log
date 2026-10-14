@@ -63,7 +63,7 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final repo = Repository.instance;
   DateTime selectedDate = DateTime.now();
 
@@ -97,6 +97,9 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Висящие «идущие» тренировки (в т.ч. прошлых дней) закрыть молча.
+    repo.closeIdleWorkouts(DateTime.now());
     _ensureWorkoutTicker();
     _loadTodayHealth();
     // Первый запуск (в том числе после обновления приложения) — онбординг.
@@ -112,6 +115,13 @@ class _MainScreenState extends State<MainScreen> {
         });
       });
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Вернулись в приложение (например, из окна разрешений часов) —
+    // перечитать шаги/пульс.
+    if (state == AppLifecycleState.resumed) _loadTodayHealth();
   }
 
   void _refresh() {
@@ -190,6 +200,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _restTicker?.cancel();
     _workoutTicker?.cancel();
     TimerSignals.keepScreenOn(false);
@@ -263,6 +274,16 @@ class _MainScreenState extends State<MainScreen> {
 
   void _onWorkoutTick() {
     if (!mounted) return;
+    // Авто-закрытие (решение Паши 14.10): 2 часа без подходов — конец.
+    if (repo.closeIdleWorkouts(DateTime.now())) {
+      _workoutTicker?.cancel();
+      _workoutTicker = null;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Тренировка закрыта сама: 2 часа без подходов'),
+          duration: Duration(seconds: 4)));
+      setState(() {});
+      return;
+    }
     final w = repo.workoutOn(DateTime.now());
     if (w == null || !w.running) {
       _workoutTicker?.cancel();
@@ -303,20 +324,35 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {});
   }
 
+  /// Пауза (кнопка «Пауза»): отрезок закрывается, время сохраняется.
+  void _pauseWorkout() {
+    repo.pauseWorkout(DateTime.now());
+    _ensureWorkoutTicker();
+    setState(() {});
+  }
+
+  /// Возобновление: новый отрезок; до первого подхода — пауза по фазам.
+  void _resumeWorkout() {
+    repo.startWorkout(DateTime.now());
+    _lastSetAt = null;
+    _ensureWorkoutTicker();
+    setState(() {});
+  }
+
   /// Завершение: переспросить, показать итог.
   Future<void> _endWorkoutDialog() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Завершить тренировку?'),
-        content: const Text('Всё получилось? Время и калории зафиксируем.'),
+        title: const Text('Закончить тренировку?'),
+        content: const Text('Время и калории зафиксируем.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Ещё нет')),
           FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Завершить')),
+              child: const Text('Закончить')),
         ],
       ),
     );
@@ -549,17 +585,18 @@ class _MainScreenState extends State<MainScreen> {
   Widget _workoutSection() {
     final now = DateTime.now();
     final w = repo.workoutOn(now);
-    if (w == null || !w.running) {
-      final finished = w != null;
+    final active = w != null && (w.running || w.paused);
+    if (!active) {
+      // Слово «Продолжить» убрано (правка Паши 14.10): любая новая
+      // тренировка начинается кнопкой «Начать».
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
         child: SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
             onPressed: _startWorkout,
-            icon: Icon(finished ? Icons.replay : Icons.play_arrow),
-            label:
-                Text(finished ? 'Продолжить тренировку' : 'Начать тренировку'),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Начать тренировку'),
           ),
         ),
       );
@@ -584,9 +621,10 @@ class _MainScreenState extends State<MainScreen> {
       elapsedSec: workoutElapsedSec(
           done: w.done, start: w.start, end: w.end, now: now),
       // Наглядность времени (правка 14.10): когда начался текущий заход,
-      // сколько заходов было до этого.
+      // сколько заходов было до этого, с какого времени на паузе.
       timeText: 'С ${w.start}'
-          '${w.done.isEmpty ? '' : ' · заходов сегодня: ${w.done.length + 1}'}',
+          '${w.done.isEmpty ? '' : ' · заходов сегодня: ${w.done.length + 1}'}'
+          '${w.paused && w.end != null ? ' · на паузе с ${w.end}' : ''}',
       kcal: weight == null
           ? null
           : kcalFromPhases(
@@ -603,6 +641,9 @@ class _MainScreenState extends State<MainScreen> {
           : _planTextFor(selected),
       setsCount: selected == null ? 0 : _setsTodayFor(selected),
       trainerLine: _startLine ?? '',
+      paused: w.paused,
+      onPause: _pauseWorkout,
+      onResume: _resumeWorkout,
       onEnd: _endWorkoutDialog,
     );
   }
@@ -1359,6 +1400,7 @@ class _SetsDialogState extends State<_SetsDialog> {
     final session = Repository.instance
         .sessionForOrNew(widget.date, widget.exercise.id, widget.person.id);
     session.sets.add(SetEntry(weight, reps));
+    Repository.instance.touchWorkout(widget.date);
     Repository.instance.save();
     _reps.clear();
     widget.onSetAdded?.call();
@@ -1381,6 +1423,7 @@ class _SetsDialogState extends State<_SetsDialog> {
     final session = Repository.instance
         .sessionForOrNew(widget.date, widget.exercise.id, widget.person.id);
     session.sets.addAll(prev.map((e) => SetEntry(e.weight, e.reps)));
+    Repository.instance.touchWorkout(widget.date);
     Repository.instance.save();
     setState(() {});
   }

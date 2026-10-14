@@ -373,8 +373,9 @@ class Repository {
   WorkoutTime? workoutOn(DateTime date) => workouts[isoDate(date)];
 
   /// Начать тренировку. Если уже идёт — вернёт как есть. Если была
-  /// завершена — продолжит НОВЫМ отрезком (прежний уходит в done, разрыв
-  /// между заходами не считается ни во времени, ни в калориях).
+  /// завершена или на паузе — продолжит НОВЫМ отрезком (прежний уходит
+  /// в done, разрыв между заходами не считается ни во времени, ни в
+  /// калориях).
   WorkoutTime startWorkout(DateTime date) {
     final key = isoDate(date);
     final existing = workouts[key];
@@ -386,23 +387,83 @@ class Repository {
       if (finished != null) {
         existing.done.add([existing.start, finished]);
       }
-      existing.start = _hhmm(DateTime.now());
+      existing.start = _hhmm(date);
       existing.end = null;
+      existing.paused = false;
+      existing.lastAct = existing.start;
       save();
       return existing;
     }
-    final w = WorkoutTime(start: _hhmm(DateTime.now()));
+    final w = WorkoutTime(start: _hhmm(date), lastAct: _hhmm(date));
     workouts[key] = w;
     save();
     return w;
   }
 
-  /// Завершить тренировку — поставить конец (текущее время).
-  void endWorkout(DateTime date) {
+  /// Пауза (решение Паши 14.10): текущий отрезок закрывается, ставится
+  /// пометка «на паузе» — время уже в done, можно возобновить.
+  void pauseWorkout(DateTime date) {
     final w = workouts[isoDate(date)];
     if (w == null || !w.running) return;
-    w.end = _hhmm(DateTime.now());
+    w.end = _hhmm(date);
+    w.paused = true;
     save();
+  }
+
+  /// Закончить тренировку (с подтверждения): конец — текущее время,
+  /// пометка «на паузе» снимается.
+  void endWorkout(DateTime date) {
+    final w = workouts[isoDate(date)];
+    if (w == null) return;
+    w.end ??= _hhmm(date);
+    w.paused = false;
+    save();
+  }
+
+  /// Отметить активность: записали подход в идущей тренировке.
+  void touchWorkout(DateTime date) {
+    final w = workouts[isoDate(date)];
+    if (w == null || !w.running) return;
+    w.lastAct = _hhmm(date);
+    save();
+  }
+
+  /// Авто-закрытие (решение Паши 14.10): идущая тренировка без подходов
+  /// дольше [idle] закрывается сама — конец ставится по последней
+  /// активности (старт/возобновление/подход). Ещё закрываем «идущие»
+  /// тренировки прошлых дней — иначе их таймер тянет вечно и портит
+  /// статистику. Возвращает true, если что-то закрыли.
+  bool closeIdleWorkouts(DateTime now,
+      {Duration idle = const Duration(hours: 2)}) {
+    var closed = false;
+    final today = isoDate(now);
+    for (final e in workouts.entries) {
+      final w = e.value;
+      if (w.end != null) continue; // закончена или на паузе — не трогаем
+      if (e.key != today) {
+        w.end = w.lastAct ?? w.start;
+        closed = true;
+        continue;
+      }
+      final last = _todayAt(now, w.lastAct ?? w.start);
+      if (last == null) continue;
+      if (now.difference(last) >= idle) {
+        w.end = w.lastAct ?? w.start;
+        closed = true;
+      }
+    }
+    if (closed) save();
+    return closed;
+  }
+
+  /// 'HH:mm' как время в переданный день (null — мусор в поле).
+  static DateTime? _todayAt(DateTime day, String hhmm) {
+    final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(hhmm.trim());
+    if (m == null) return null;
+    final h = int.tryParse(m.group(1)!);
+    final min = int.tryParse(m.group(2)!);
+    if (h == null || min == null || h > 23 || min > 59) return null;
+    return DateTime(day.year, day.month, day.day, h, min);
   }
 
   static String _hhmm(DateTime t) =>
