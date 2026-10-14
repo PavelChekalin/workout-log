@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 
 import 'data.dart';
+import 'kcal.dart';
 
 /// Панель идущей тренировки. Все данные считаются снаружи (main.dart) —
 /// панель только рисует.
@@ -43,13 +44,7 @@ class WorkoutPanel extends StatelessWidget {
     required this.onEnd,
   });
 
-  String get _timer {
-    final m = elapsedSec ~/ 60;
-    final s = elapsedSec % 60;
-    final mm = m.toString().padLeft(2, '0');
-    final ss = s.toString().padLeft(2, '0');
-    return m >= 60 ? '${m ~/ 60}:$mm:$ss' : '$mm:$ss';
-  }
+  String get _timer => ruDurationWords(elapsedSec);
 
   @override
   Widget build(BuildContext context) {
@@ -69,22 +64,24 @@ class WorkoutPanel extends StatelessWidget {
             children: [
               const Icon(Icons.timer_outlined, size: 20),
               const SizedBox(width: 6),
-              Text(_timer,
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 12),
-              if (weightKnown)
-                Text(
-                  '≈ ${kcal == null ? '…' : kcal!.round()} ккал',
-                  style: theme.textTheme.titleMedium,
-                ),
-              const Spacer(),
+              // Фраза вместо цифр (правка Паши 14.10): «Вы занимаетесь …».
+              Expanded(
+                child: Text('Вы занимаетесь $_timer',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
               OutlinedButton(
                 onPressed: onEnd,
                 child: const Text('Завершить'),
               ),
             ],
           ),
+          if (weightKnown)
+            Text(
+              '≈ ${kcal == null ? '…' : kcal!.round()} ккал',
+              style: theme.textTheme.titleMedium,
+            ),
           if (timeText.isNotEmpty)
             Text(timeText, style: theme.textTheme.bodySmall),
           if (weightKnown)

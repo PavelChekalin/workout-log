@@ -112,4 +112,24 @@ void main() {
     expect(fmtDuration(60 * 60), '1 ч 0 мин');
     expect(fmtDuration(72 * 60 + 30), '1 ч 12 мин');
   });
+
+  test('панель: длительность словами с правильными склонениями', () {
+    expect(ruDurationWords(0), 'меньше минуты');
+    expect(ruDurationWords(45), 'меньше минуты');
+    expect(ruDurationWords(59), 'меньше минуты');
+    expect(ruDurationWords(60), '1 минуту');
+    expect(ruDurationWords(2 * 60), '2 минуты');
+    expect(ruDurationWords(5 * 60), '5 минут');
+    expect(ruDurationWords(11 * 60), '11 минут');
+    expect(ruDurationWords(21 * 60), '21 минуту');
+    expect(ruDurationWords(3600), '1 час');
+    expect(ruDurationWords(3 * 3600), '3 часа');
+    expect(ruDurationWords(5 * 3600), '5 часов');
+    expect(ruDurationWords(11 * 3600), '11 часов');
+    expect(ruDurationWords(21 * 3600), '21 час');
+    expect(ruDurationWords(3600 + 60), '1 час 1 минуту');
+    expect(ruDurationWords(72 * 60), '1 час 12 минут');
+    expect(ruDurationWords(2 * 3600 + 5 * 60), '2 часа 5 минут');
+    expect(ruDurationWords(5 * 3600 + 45 * 60), '5 часов 45 минут');
+  });
 }

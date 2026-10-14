@@ -87,3 +87,37 @@ String fmtDuration(int totalSec) {
   if (min < 60) return '$min мин';
   return '${min ~/ 60} ч ${min % 60} мин';
 }
+
+/// Склонение для строки «Вы занимаетесь …»: 1 минуту / 5 минут / 11 минут.
+String _ruMinutes(int m) {
+  if (m % 100 >= 11 && m % 100 <= 14) return '$m минут';
+  return switch (m % 10) {
+    1 => '$m минуту',
+    2 || 3 || 4 => '$m минуты',
+    _ => '$m минут',
+  };
+}
+
+/// Часы: 1 час / 3 часа / 5 часов / 11 часов.
+String _ruHours(int h) {
+  if (h % 100 >= 11 && h % 100 <= 14) return '$h часов';
+  return switch (h % 10) {
+    1 => '$h час',
+    2 || 3 || 4 => '$h часа',
+    _ => '$h часов',
+  };
+}
+
+/// Длительность словами для панели тренировки (правка Паши 14.10 —
+/// вместо «05:43» человеческий текст):
+/// 'меньше минуты' / '1 минуту' / '25 минут' / '1 час' /
+/// '1 час 12 минут' / '2 часа 5 минут'.
+String ruDurationWords(int totalSec) {
+  if (totalSec < 60) return 'меньше минуты';
+  final min = totalSec ~/ 60;
+  final h = min ~/ 60;
+  final m = min % 60;
+  if (h == 0) return _ruMinutes(m);
+  if (m == 0) return _ruHours(h);
+  return '${_ruHours(h)} ${_ruMinutes(m)}';
+}
