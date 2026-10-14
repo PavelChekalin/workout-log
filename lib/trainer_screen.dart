@@ -800,6 +800,9 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
           TextField(
             controller: ageCtrl,
             keyboardType: TextInputType.number,
+            // Без setState кнопка «Дальше» оставалась бы серой: _stepOk
+            // пересчитывается только при перерисовке (правка 14.10).
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
                 labelText: 'Возраст', suffixText: 'лет'),
           ),
@@ -812,6 +815,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
           TextField(
             controller: heightCtrl,
             keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
                 labelText: 'Рост', suffixText: 'см'),
           ),
@@ -824,6 +828,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
           TextField(
             controller: weightCtrl,
             keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
             decoration:
                 const InputDecoration(labelText: 'Вес', suffixText: 'кг'),
           ),

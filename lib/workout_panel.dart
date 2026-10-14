@@ -15,6 +15,9 @@ class WorkoutPanel extends StatelessWidget {
   final double? kcal;
   final bool weightKnown;
 
+  /// Подпись под таймером: «С 18:32» + число заходов, если был разрыв.
+  final String timeText;
+
   /// Участники, у кого известен вес (для калорий и переключения).
   final List<Person> people;
   final String selectedPersonId;
@@ -30,6 +33,7 @@ class WorkoutPanel extends StatelessWidget {
     required this.elapsedSec,
     required this.kcal,
     required this.weightKnown,
+    this.timeText = '',
     required this.people,
     required this.selectedPersonId,
     required this.onSelectPerson,
@@ -81,6 +85,8 @@ class WorkoutPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (timeText.isNotEmpty)
+            Text(timeText, style: theme.textTheme.bodySmall),
           if (weightKnown)
             Text('калории — грубая оценка, силовая ±25–40%',
                 style: theme.textTheme.bodySmall),

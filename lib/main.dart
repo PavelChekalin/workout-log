@@ -265,6 +265,11 @@ class _MainScreenState extends State<MainScreen> {
     _workoutTicker = null;
     if (mounted) setState(() {});
     if (!mounted) return;
+    // Отрезки для итога: завершённые + текущий (endWorkout уже проставил end).
+    final segments = <List<String>>[
+      ...w.done,
+      if (w.end != null) [w.start, w.end!],
+    ];
     // Фраза по итогу: весь план дня записан — «план выполнен», иначе «частично».
     String? endLine;
     for (final p in repo.people) {
@@ -290,6 +295,7 @@ class _MainScreenState extends State<MainScreen> {
       builder: (_) => _WorkoutSummaryDialog(
           elapsedSec: elapsed,
           kcalByPerson: kcalByPerson,
+          segments: segments,
           line: endLine),
     );
   }
@@ -497,6 +503,10 @@ class _MainScreenState extends State<MainScreen> {
     return WorkoutPanel(
       elapsedSec: workoutElapsedSec(
           done: w.done, start: w.start, end: w.end, now: now),
+      // Наглядность времени (правка 14.10): когда начался текущий заход,
+      // сколько заходов было до этого.
+      timeText: 'С ${w.start}'
+          '${w.done.isEmpty ? '' : ' · заходов сегодня: ${w.done.length + 1}'}',
       kcal: weight == null
           ? null
           : kcalFromPhases(
@@ -1460,16 +1470,29 @@ class _ExerciseDialogState extends State<_ExerciseDialog> {
     super.dispose();
   }
 
+  /// Последнее название, подставленное автоматически (чтобы не затирать
+  /// название, которое пользователь написал сам).
+  String _autoName = '';
+
+  /// Выбор техники: подставить её название в поле, если поле пустое или
+  /// в нём прежнее автоматическое название (правка Паши 14.10).
+  void _applyTech(TechEntry picked) {
+    final cur = _name.text.trim();
+    if (cur.isEmpty || cur == _autoName) {
+      _name.text = picked.name;
+      _autoName = picked.name;
+    }
+    _techId = picked.id;
+    _techCleared = false;
+  }
+
   Future<void> _pickTech() async {
     final picked = await showDialog<TechEntry>(
       context: context,
       builder: (_) => const _TechPicker(),
     );
     if (picked == null) return;
-    setState(() {
-      _techId = picked.id;
-      _techCleared = false;
-    });
+    setState(() => _applyTech(picked));
   }
 
   @override
@@ -1496,27 +1519,26 @@ class _ExerciseDialogState extends State<_ExerciseDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Дни недели:'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: List.generate(7, (i) {
-                final day = i + 1;
-                return FilterChip(
-                  label: Text(weekdaysShort[day - 1]),
-                  selected: _days.contains(day),
-                  onSelected: (on) => setState(() {
-                    if (on) {
-                      _days.add(day);
-                    } else {
-                      _days.remove(day);
-                    }
-                  }),
-                );
-              }),
-            ),
-            const SizedBox(height: 16),
+            // Порядок по правке Паши (14.10): описание-ярлык выезжает выше,
+            // дни недели уходят вниз.
+            if (suggestions.isNotEmpty) ...[
+              Text('Похоже на:',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final s in suggestions)
+                    ActionChip(
+                      label: Text(s.name),
+                      avatar: const Icon(Icons.auto_awesome, size: 16),
+                      onPressed: () => setState(() => _applyTech(s)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
             Row(
               children: [
                 const Text('Техника:',
@@ -1557,27 +1579,6 @@ class _ExerciseDialogState extends State<_ExerciseDialog> {
                   ),
               ],
             ),
-            if (suggestions.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('Похоже на:',
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final s in suggestions)
-                    ActionChip(
-                      label: Text(s.name),
-                      avatar: const Icon(Icons.auto_awesome, size: 16),
-                      onPressed: () => setState(() {
-                        _techId = s.id;
-                        _techCleared = false;
-                      }),
-                    ),
-                ],
-              ),
-            ],
             if (tech != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -1601,6 +1602,27 @@ class _ExerciseDialogState extends State<_ExerciseDialog> {
                 ),
               ),
             ],
+            const SizedBox(height: 16),
+            const Text('Дни недели:'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: List.generate(7, (i) {
+                final day = i + 1;
+                return FilterChip(
+                  label: Text(weekdaysShort[day - 1]),
+                  selected: _days.contains(day),
+                  onSelected: (on) => setState(() {
+                    if (on) {
+                      _days.add(day);
+                    } else {
+                      _days.remove(day);
+                    }
+                  }),
+                );
+              }),
+            ),
           ],
         ),
       ),
@@ -1692,11 +1714,15 @@ class _TechPickerState extends State<_TechPicker> {
 class _WorkoutSummaryDialog extends StatelessWidget {
   final int elapsedSec;
   final Map<Person, double?> kcalByPerson;
+
+  /// Отрезки [['18:32','19:28'], ...] — для наглядной строки времени.
+  final List<List<String>> segments;
   final String? line;
 
   const _WorkoutSummaryDialog({
     required this.elapsedSec,
     required this.kcalByPerson,
+    this.segments = const [],
     this.line,
   });
 
@@ -1712,6 +1738,22 @@ class _WorkoutSummaryDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Длительность: ${fmtDuration(elapsedSec)}'),
+          if (segments.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            // Наглядно: разрыв между заходами виден и не считается.
+            for (var i = 0; i < segments.length; i++)
+              Text(
+                segments[i].length >= 2
+                    ? '${i + 1}-й заход ${segments[i][0]}–${segments[i][1]}'
+                    : 'Заход ${i + 1}: ${segments[i].join('–')}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            if (segments.length > 1)
+              Text(
+                'Разрыв между заходами не в счёт — ни по времени, ни по калориям.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
           const SizedBox(height: 8),
           if (known.isEmpty)
             const Text(

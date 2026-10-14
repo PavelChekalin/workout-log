@@ -66,4 +66,48 @@ void main() {
     // Пометка про друзей — на первом шаге анкеты (§2).
     expect(find.textContaining('Друзей и их параметры'), findsOneWidget);
   });
+
+  testWidgets('анкета: кнопка Дальше оживает после ввода возраста',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final repo = Repository.instance;
+    repo.people.clear();
+    repo.exercises.clear();
+    repo.sessions.clear();
+    repo.trainerProfiles.clear();
+    await repo.init();
+    final p = repo.addPerson('Паша');
+
+    await tester.pumpWidget(
+        MaterialApp(home: QuestionnaireScreen(personId: p.id)));
+    await tester.pumpAndSettle();
+
+    // Пустой возраст — кнопки нет (disabled).
+    final btn = find.widgetWithText(FilledButton, 'Дальше');
+    expect(btn, findsOneWidget);
+    expect(tester.widget<FilledButton>(btn).onPressed, isNull);
+
+    // Ввели возраст — кнопка оживает (баг 14.10: не перерисовывалась).
+    await tester.enterText(find.byType(TextField).first, '35');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(btn).onPressed, isNotNull);
+
+    await tester.tap(btn);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('шаг 2 из 7'), findsOneWidget);
+
+    // Рост и вес — та же история.
+    await tester.enterText(find.byType(TextField).first, '175');
+    await tester.pump();
+    final btn2 = find.widgetWithText(FilledButton, 'Дальше');
+    expect(tester.widget<FilledButton>(btn2).onPressed, isNotNull);
+    await tester.tap(btn2);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('шаг 3 из 7'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, '80');
+    await tester.pump();
+    final btn3 = find.widgetWithText(FilledButton, 'Дальше');
+    expect(tester.widget<FilledButton>(btn3).onPressed, isNotNull);
+  });
 }
