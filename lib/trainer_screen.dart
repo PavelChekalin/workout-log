@@ -387,15 +387,9 @@ class _TrainerScreenState extends State<TrainerScreen> {
     );
   }
 
-  /// Курсивная строчка фразы тренера (или пустота).
-  Widget _coachLineText(String? line) {
-    if (line == null || line.isEmpty) return const SizedBox.shrink();
-    return Text(line,
-        style: Theme.of(context)
-            .textTheme
-            .bodySmall
-            ?.copyWith(fontStyle: FontStyle.italic));
-  }
+  /// Строчка фразы тренера: жёлтая жирная (или пустота).
+  Widget _coachLineText(String? line) =>
+      coachLineText(context, line, base: Theme.of(context).textTheme.bodySmall);
 
   /// Карточка конца цикла: статистика + рекорды + «что дальше?» (§8).
   Widget _cycleReportCard(Person p, TrainerProfile profile, Program program) {
@@ -422,11 +416,8 @@ class _TrainerScreenState extends State<TrainerScreen> {
                   ?.copyWith(fontWeight: FontWeight.bold)),
           if (line != null) ...[
             const SizedBox(height: 2),
-            Text(line,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(fontStyle: FontStyle.italic)),
+            // Фраза тренера — жёлтая жирная (правка Паши 14.10).
+            coachLineText(context, line),
           ],
           const SizedBox(height: 6),
           Text('Тренировок выполнено: ${report.done} из ${report.planned}'),
@@ -1021,8 +1012,7 @@ class _ProgramSetupScreenState extends State<ProgramSetupScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(p.description),
-          const SizedBox(height: 16),
+          Text(p.description),          const SizedBox(height: 16),
           Text('Дни тренировок',
               style: Theme.of(context)
                   .textTheme
@@ -1079,13 +1069,21 @@ class _ProgramSetupScreenState extends State<ProgramSetupScreen> {
                   ],
                 ),
               )),
-          const SizedBox(height: 24),
-          FilledButton.icon(
+        ],
+      ),
+      // Кнопка вынесена из списка вниз экрана (правка 14.10): SafeArea
+      // поднимает её над системной навигацией, +12 — запас под нарисованные
+      // кнопки управления телефона, которые перекрывают низ приложения.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FilledButton.icon(
             onPressed: _assign,
             icon: const Icon(Icons.check),
             label: Text('Назначить: ${p.name}'),
           ),
-        ],
+        ),
       ),
     );
   }

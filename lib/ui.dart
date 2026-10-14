@@ -5,6 +5,24 @@ import 'data.dart';
 /// Основной акцентный цвет приложения.
 const Color kSeed = Color(0xFF00E0A4);
 
+/// Стиль фразы тренера: жирный и жёлтый (правка Паши 14.10).
+/// В тёмной теме — яркий янтарный, в светлой — тёмно-янтарный,
+/// чтобы читалось на светлом фоне.
+TextStyle coachLineStyle(BuildContext context) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  return TextStyle(
+    fontWeight: FontWeight.bold,
+    color: dark ? const Color(0xFFFFD54F) : const Color(0xFFF57F17),
+  );
+}
+
+/// Строчка фразы тренера: жёлтая жирная (или пустота).
+/// Везде, где приложение показывает реплику тренера — только этим виджетом.
+Widget coachLineText(BuildContext context, String? line, {TextStyle? base}) {
+  if (line == null || line.isEmpty) return const SizedBox.shrink();
+  return Text(line, style: base?.merge(coachLineStyle(context)) ?? coachLineStyle(context));
+}
+
 /// Палитра акцентов для участников (чтобы каждый был узнаваем).
 const List<Color> kPersonColors = [
   Color(0xFF00E0A4),

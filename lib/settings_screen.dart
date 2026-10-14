@@ -66,7 +66,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Настройки')),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        // Запас снизу — кнопки управления телефона перекрывают низ экрана.
+        padding: EdgeInsets.fromLTRB(
+            12, 12, 12, 12 + MediaQuery.of(context).viewPadding.bottom + 40),
         children: [
           const _SectionTitle('Оформление'),
           Card(
@@ -354,66 +356,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const _SectionTitle('О программе'),
+          const _SectionTitle('О приложении'),
           Card(
             color: Theme.of(context).colorScheme.surfaceContainerHigh,
             elevation: 0,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('О программе'),
+              title: const Text('О приложении'),
               subtitle: const Text('Версия, что за приложение и где данные'),
-              onTap: _showAbout,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AboutScreen())),
             ),
           ),
           const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAbout() async {
-    final info = await PackageInfo.fromPlatform();
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Журнал тренировок'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Версия ${info.version}+${info.buildNumber}'),
-              const SizedBox(height: 12),
-              const Text(
-                'Дневник тренировок для себя и друзей: подходы, веса, '
-                'статистика, таймер отдыха и заметки.',
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Все данные хранятся только на этом устройстве — '
-                'интернет не используется. Копию можно сохранить '
-                'и восстановить в разделе «Данные».',
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Участников: ${repo.people.length} · '
-                'Упражнений: ${repo.exercises.length} · '
-                'Записей: ${repo.sessions.length}',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
-          ),
         ],
       ),
     );
@@ -734,6 +693,142 @@ class _SectionTitle extends StatelessWidget {
           letterSpacing: 1,
           fontWeight: FontWeight.bold,
           color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Страница «О приложении» (правка Паши 14.10): версия, что за приложение,
+/// что умеет тренер, где хранятся данные и совет сделать копию.
+class AboutScreen extends StatelessWidget {
+  const AboutScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = Repository.instance;
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Scaffold(
+      appBar: AppBar(title: const Text('О приложении')),
+      body: ListView(
+        // Запас снизу — низ экрана перекрывают кнопки управления телефона.
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).viewPadding.bottom + 48),
+        children: [
+          Center(
+            child: Icon(Icons.fitness_center,
+                size: 56, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text('Журнал тренировок',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+          ),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (_, snap) => Center(
+              child: Text(
+                'Версия ${snap.data?.version ?? '…'}'
+                '+${snap.data?.buildNumber ?? ''}',
+                style: TextStyle(fontSize: 13, color: muted),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const _AboutCard(
+            icon: Icons.menu_book,
+            title: 'Что это',
+            text: 'Дневник тренировок для себя и друзей: подходы, веса, '
+                'статистика, таймер отдыха, видео техники и заметки.',
+          ),
+          const _AboutCard(
+            icon: Icons.fitness_center,
+            title: 'Тренер',
+            text: 'Офлайн-тренер без интернета: анкета, подбор программы, '
+                'план на сегодня, подбадривание во время тренировки и отчёт '
+                'по циклу. Всё считается по правилам — никакого облака.',
+          ),
+          const _AboutCard(
+            icon: Icons.lock_outline,
+            title: 'Где данные',
+            text: 'Только на этом устройстве — интернет приложению не нужен. '
+                'Копию можно сохранить и восстановить в разделе «Данные» '
+                'экрана «Настройки».',
+          ),
+          Card(
+            color: theme.colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Сейчас в приложении',
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Участников: ${repo.people.length} · '
+                    'Упражнений: ${repo.exercises.length} · '
+                    'Записей тренировок: ${repo.sessions.length}',
+                    style: TextStyle(fontSize: 13.5, color: muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Совет: раз в месяц сохраняйте резервную копию '
+            '(экран «Настройки» → «Данные») — если телефон потеряется, '
+            'данные не потеряются.',
+            style: TextStyle(fontSize: 12.5, color: muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Карточка-абзац на странице «О приложении».
+class _AboutCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String text;
+  const _AboutCard({required this.icon, required this.title, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.surfaceContainerHigh,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 22, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(text, style: const TextStyle(height: 1.35)),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

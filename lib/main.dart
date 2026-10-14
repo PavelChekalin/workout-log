@@ -221,8 +221,10 @@ class _MainScreenState extends State<MainScreen> {
     _ensureWorkoutTicker();
     _startLine = coachLine(repo.trainerTone, CoachEvent.start);
     if (_startLine != null) {
+      // Фраза тренера — жёлтая жирная (правка Паши 14.10).
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(_startLine!), duration: const Duration(seconds: 2)));
+          content: coachLineText(context, _startLine),
+          duration: const Duration(seconds: 2)));
     }
     setState(() {});
   }
@@ -1135,19 +1137,28 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Показывает технику упражнения (или предлагает подобрать, если не задана).
+  /// Шторка (правка 14.10) вытягивается до середины экрана, прокручивается
+  /// и имеет запас снизу — текст не уходит под нарисованные кнопки
+  /// управления телефона.
   Future<void> _showTech(Exercise exercise) async {
     final tech = techById(exercise.techId);
+    // Запас снизу: системная навигация + кнопки, которые телефон рисует
+    // поверх приложения.
+    final bottomPad = 28.0 + MediaQuery.of(context).viewPadding.bottom + 48;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-        child: tech == null
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.4,
+        minChildSize: 0.25,
+        maxChildSize: 0.5, // середина экрана — выше не нужно
+        builder: (_, sheetCtrl) => ListView(
+          controller: sheetCtrl,
+          padding: EdgeInsets.fromLTRB(20, 4, 20, bottomPad),
+          children: tech == null
+              ? [
                   const Text('Техника не выбрана',
                       style:
                           TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
@@ -1163,12 +1174,8 @@ class _MainScreenState extends State<MainScreen> {
                     icon: const Icon(Icons.menu_book),
                     label: const Text('Подобрать технику'),
                   ),
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                ]
+              : [
                   Text(tech.name,
                       style: const TextStyle(
                           fontSize: 18, fontWeight: FontWeight.bold)),
@@ -1188,7 +1195,7 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(height: 12),
                   Text(tech.technique, style: const TextStyle(height: 1.4)),
                 ],
-              ),
+        ),
       ),
     );
   }
@@ -1763,11 +1770,8 @@ class _WorkoutSummaryDialog extends StatelessWidget {
                 '${e.key.name}: ≈ ${e.value!.round()} ккал (грубая оценка)')),
           if (line != null) ...[
             const SizedBox(height: 8),
-            Text(line!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(fontStyle: FontStyle.italic)),
+            // Фраза тренера — жёлтая жирная (правка Паши 14.10).
+            coachLineText(context, line),
           ],
           const SizedBox(height: 8),
           Text(

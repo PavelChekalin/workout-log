@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'data.dart';
 import 'kcal.dart';
+import 'ui.dart';
 
 /// Панель идущей тренировки. Все данные считаются снаружи (main.dart) —
 /// панель только рисует.
@@ -115,9 +116,8 @@ class WorkoutPanel extends StatelessWidget {
               style: theme.textTheme.bodySmall),
           if (trainerLine.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(trainerLine,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(fontStyle: FontStyle.italic)),
+            // Фраза тренера — жёлтая жирная (правка Паши 14.10).
+            coachLineText(context, trainerLine),
           ],
         ],
       ),
