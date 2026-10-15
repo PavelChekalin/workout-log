@@ -161,18 +161,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     setState(() => _todayHealth = h);
   }
 
-  Future<void> _requestHealthAccess() async {
-    final ok = await HealthBridge.requestAccess();
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Нет доступа к данным Health Connect. Сейчас '
-              'откроется Health Connect — разреши там: Приложения → '
-              'Журнал тренировок → Шаги и Пульс.')));
-    }
-    await _loadTodayHealth();
-  }
-
   /// Строка «шаги и пульс за сегодня» — одна строка сверху на экране
   /// «Сегодня» (решение Паши 14.10: без дублей в карточках упражнений).
   Widget _healthLine() {
@@ -193,9 +181,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           : parts.join(' · ');
     }
     final cs = Theme.of(context).colorScheme;
+    // Доступ к Health Connect выдаётся только в настройках (правка Паши
+    // 16.10) — на главном экране строка просто информирует, без кнопки.
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: h.granted ? _loadTodayHealth : _requestHealthAccess,
+      onTap: h.granted ? _loadTodayHealth : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 2, 14, 2),
         child: Row(
@@ -211,12 +201,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               child: Text(text,
                   style: TextStyle(fontSize: 12.5, color: cs.outline)),
             ),
-            if (!h.granted)
-              Text('Дать доступ',
-                  style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: cs.primary)),
           ],
         ),
       ),
