@@ -76,9 +76,11 @@ class HealthBridge {
 
   /// Запросить доступ к шагам и пульсу. true — доступ выдан.
   ///
-  /// Сначала пробуем СВОЁ окно Health Connect (классическое действие) —
-  /// на части прошивок (Realme) штатный запрос пакета health не доходит:
-  /// окно просто не открывается. Если своего окна нет — штатный путь.
+  /// Цепочка (диагностика 15.10): 1) свой канал — обычный системный
+  /// запрос (прямое окно Health Connect на Realme закрыто прошивкой);
+  /// 2) штатный путь пакета health; 3) если ничего не вышло — открыть
+  /// дом Health Connect, где доступ выдаётся вручную:
+  /// Приложения → Журнал тренировок → Шаги/Пульс.
   static Future<bool> requestAccess() async {
     try {
       const ch = MethodChannel('workout/health');
@@ -92,10 +94,18 @@ class HealthBridge {
       // Не открылось — штатный путь ниже.
     }
     try {
-      return await _health.requestAuthorization(_types);
+      final ok = await _health.requestAuthorization(_types);
+      if (ok) return true;
     } catch (_) {
-      return false;
+      // Штатный путь не прошёл (Realme) — идём к ручному пути.
     }
+    try {
+      await const MethodChannel('workout/health')
+          .invokeMethod('openHealthHome');
+    } catch (_) {
+      // Дома Health Connect нет — экран сообщит об отсутствии доступа.
+    }
+    return false;
   }
 
   /// Отобрать доступ (если захочется переиграть).

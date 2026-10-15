@@ -76,10 +76,16 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
-        // Запрос разрешений Health Connect СВОИМ окном (решение 14.10:
-        // на Realme штатный запрос пакета health шлёт новое действие
-        // androidx.health.*, которого контроллер прошивки не знает — окно
-        // не открывается). Классическое действие работает везде.
+        // Запрос разрешений Health Connect (диагностика 15.10):
+        // 1) Прямое окно Health Connect (PermissionsActivity) на Realme
+        //    помечено android:permission=GRANT_RUNTIME_PERMISSIONS —
+        //    системой запрещено обычным приложениям (SecurityException,
+        //    окно закрывается за 4 мс, «реакции нет»);
+        // 2) Штатный запрос пакета health шлёт действие
+        //    androidx.health.*, которого контроллер прошивки не знает.
+        // Просим health-разрешения ОБЫЧНЫМ системным запросом (как
+        // «Физическую активность»); если он не прошёл — открываем дом
+        // Health Connect, где доступ выдаётся вручную.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "workout/health")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -90,21 +96,27 @@ class MainActivity : FlutterFragmentActivity() {
                         }
                         healthPermResult = result
                         // Шагам сначала нужно системное разрешение
-                        // «Физическая активность» (Android 13+). Health
-                        // Connect просит его сам и на этой Realme тут же
-                        // закрывается — просим сами, обычным окном, а
-                        // потом уже открываем окно Health Connect.
+                        // «Физическая активность» (Android 13+), дальше —
+                        // сами health-разрешения обычным системным
+                        // запросом (прямое окно Health Connect на Realme
+                        // прошивкой запрещено).
                         val ar = Manifest.permission.ACTIVITY_RECOGNITION
                         val arGranted = ContextCompat.checkSelfPermission(this, ar) ==
                             PackageManager.PERMISSION_GRANTED
                         Log.i("wl-health", "request: AR granted=$arGranted")
                         if (arGranted) {
-                            launchHealthPermWindow()
+                            requestHealthPermissions()
                         } else {
                             ActivityCompat.requestPermissions(
                                 this, arrayOf(ar), rcHealthAr
                             )
                         }
+                    }
+                    "openHealthHome" -> {
+                        // Дом Health Connect — финальный ручной путь:
+                        // Приложения → Журнал тренировок → Шаги/Пульс.
+                        openHealthHome()
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -298,41 +310,48 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
-    // Окно Health Connect классическим действием (его контроллер на Realme
-    // новое действие androidx.health.* не знает). Вызываем ТОЛЬКО когда
-    // «Физическая активность» уже разрешена — иначе окно Health Connect
-    // мгновенно закрывается на попытке попросить её само.
-    private fun launchHealthPermWindow() {
+    // Запрос health-разрешений обычным системным запросом (диагностика
+    // 15.10: прямое окно Health Connect — PermissionsActivity — на Realme
+    // помечено android:permission=GRANT_RUNTIME_PERMISSIONS, системой
+    // закрыто для обычных приложений: SecurityException → мгновенная
+    // отмена resultCode=0, «реакции нет»). Системный запрос показывает
+    // своё окно само (как для «Физической активности»).
+    private fun requestHealthPermissions() {
         try {
-            Log.i("wl-health", "launch HC window (classic intent)")
-            val intent = Intent("android.health.connect.action.REQUEST_HEALTH_PERMISSIONS")
-                .setPackage("com.google.android.healthconnect.controller")
-                .putExtra(
-                    "androidx.health.extra.PERMISSIONS_LIST",
-                    arrayOf(
-                        "android.permission.health.READ_STEPS",
-                        "android.permission.health.READ_HEART_RATE"
-                    )
-                )
-            startActivityForResult(intent, rcHealthPerm)
+            Log.i("wl-health", "framework request (health perms)")
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    "android.permission.health.READ_STEPS",
+                    "android.permission.health.READ_HEART_RATE"
+                ),
+                rcHealthPerm
+            )
         } catch (e: Exception) {
+            Log.i("wl-health", "framework request failed: ${e.message}")
             val res = healthPermResult
             healthPermResult = null
             res?.success(false)
         }
     }
 
+    // Дом Health Connect (TrampolineActivity — без системных ограничений,
+    // проверено adb 15.10): там человек сам выдаёт доступ —
+    // Приложения → Журнал тренировок → Шаги/Пульс.
+    private fun openHealthHome() {
+        try {
+            Log.i("wl-health", "open HC home (manual grant)")
+            startActivity(
+                Intent("android.health.connect.action.MANAGE_HEALTH_DATA")
+                    .setPackage("com.google.android.healthconnect.controller")
+            )
+        } catch (e: Exception) {
+            Log.i("wl-health", "HC home failed: ${e.message}")
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == rcHealthPerm) {
-            val res = healthPermResult
-            healthPermResult = null
-            Log.i("wl-health", "HC window closed, resultCode=$resultCode")
-            // RESULT_OK — человек выдал доступ; при отмене/«назад» всё
-            // равно false — Dart перепроверит фактический доступ сам.
-            res?.success(resultCode == Activity.RESULT_OK)
-            return
-        }
         if (requestCode == rcPick) {
             val res = videoResult ?: return
             videoResult = null
@@ -405,12 +424,25 @@ class MainActivity : FlutterFragmentActivity() {
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             Log.i("wl-health", "AR dialog answered, granted=$granted")
             if (granted) {
-                launchHealthPermWindow()
+                requestHealthPermissions()
             } else {
                 val res = healthPermResult
                 healthPermResult = null
                 res?.success(false)
             }
+            return
+        }
+        if (requestCode == rcHealthPerm) {
+            // Ответ системного запроса health-разрешений. granted=false —
+            // не беда и не конец: Dart попробует штатный путь, а потом
+            // откроет дом Health Connect для ручной выдачи.
+            val granted = grantResults.isNotEmpty() &&
+                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            Log.i("wl-health", "health request answered, granted=$granted " +
+                "results=${grantResults.toList()}")
+            val res = healthPermResult
+            healthPermResult = null
+            res?.success(granted)
             return
         }
         if (requestCode == rcMedia) {

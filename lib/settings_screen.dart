@@ -37,7 +37,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _requestHealth() async {
-    await HealthBridge.requestAccess();
+    final ok = await HealthBridge.requestAccess();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Нет доступа к данным Health Connect. Сейчас '
+              'откроется Health Connect — разреши там: Приложения → '
+              'Журнал тренировок → Шаги и Пульс.')));
+    }
     await _reloadHealth();
   }
 

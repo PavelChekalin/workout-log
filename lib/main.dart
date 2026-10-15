@@ -142,8 +142,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Нет доступа к данным Health Connect. Выдай его в '
-              'настройках приложения (раздел «Данные с часов и браслетов»).')));
+          content: Text('Нет доступа к данным Health Connect. Сейчас '
+              'откроется Health Connect — разреши там: Приложения → '
+              'Журнал тренировок → Шаги и Пульс.')));
     }
     await _loadTodayHealth();
   }
