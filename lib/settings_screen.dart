@@ -8,6 +8,7 @@ import 'coach_lines.dart';
 import 'health.dart';
 import 'reminders.dart';
 import 'trainer_screen.dart';
+import 'trial.dart';
 import 'ui.dart';
 
 /// Настройки: тема оформления, участники и резервная копия данных.
@@ -890,6 +891,53 @@ class AboutScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 13.5, color: muted),
                   ),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: theme.colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ListTile(
+              leading: Icon(
+                  Trial.unlocked
+                      ? Icons.verified_outlined
+                      : Icons.hourglass_bottom,
+                  color: theme.colorScheme.primary),
+              title: const Text('Пробный период'),
+              subtitle: Text(Trial.unlocked
+                  ? 'Разблокировано навсегда'
+                  : Trial.daysLeft > 0
+                      ? 'Осталось дней: ${Trial.daysLeft} из ${Trial.days}'
+                      : 'Пробный период закончился'),
+            ),
+          ),
+          Card(
+            color: theme.colorScheme.surfaceContainerHigh,
+            elevation: 0,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ListTile(
+              leading: Icon(Icons.bug_report_outlined,
+                  color: theme.colorScheme.primary),
+              title: const Text('Жалоба или вопрос'),
+              subtitle: const Text(
+                  'Если что-то работает не так — нажми «Скопировать лог '
+                  'ошибки» и отправь текст в Телеграм.'),
+              trailing: TextButton(
+                onPressed: ErrorLog.lastError == null
+                    ? null
+                    : () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: ErrorLog.lastError!));
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Лог ошибки скопирован — '
+                                'вставь его в Телеграм')));
+                      },
+                child: const Text('Копировать'),
               ),
             ),
           ),

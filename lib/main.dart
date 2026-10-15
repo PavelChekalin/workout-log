@@ -14,6 +14,7 @@ import 'programs.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'trainer_apply.dart';
+import 'trial.dart';
 import 'trainer_logic.dart';
 import 'trainer_screen.dart';
 import 'ui.dart';
@@ -22,9 +23,13 @@ import 'workout_panel.dart';
 import 'reminders.dart';
 
 void main() async {
+  // Ловушка ошибок — первым делом, чтобы поймать даже падения при старте.
+  ErrorLog.install();
   WidgetsFlutterBinding.ensureInitialized();
   final repo = Repository.instance;
   await repo.init();
+  await Trial.init();
+  await ErrorLog.init();
   appThemeMode.value = themeModeFromName(repo.themeName);
   runApp(const WorkoutLogApp());
   // Расписание напоминаний пересчитываем при каждом старте — так оно
@@ -48,9 +53,28 @@ class WorkoutLogApp extends StatelessWidget {
         theme: buildAppTheme(Brightness.light),
         darkTheme: buildAppTheme(Brightness.dark),
         themeMode: mode,
-        home: const MainScreen(),
+        home: const _TrialGate(),
       ),
     );
+  }
+}
+
+/// Стартовый экран: если триал кончился — блокировка с полем кода,
+/// если нет — обычный главный экран.
+class _TrialGate extends StatefulWidget {
+  const _TrialGate();
+
+  @override
+  State<_TrialGate> createState() => _TrialGateState();
+}
+
+class _TrialGateState extends State<_TrialGate> {
+  @override
+  Widget build(BuildContext context) {
+    if (Trial.trialExpired) {
+      return TrialLockScreen(onUnlocked: () => setState(() {}));
+    }
+    return const MainScreen();
   }
 }
 
